@@ -1,7 +1,8 @@
 import os
 from playwright.async_api import async_playwright, Browser, BrowserContext
 
-STATE_FILE = "state.json"
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+STATE_FILE = os.path.join(BASE_DIR, "state.json")
 
 async def get_authenticated_context(p, headless: bool = True) -> BrowserContext:
     """
