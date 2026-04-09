@@ -178,11 +178,10 @@ async def send_connection_request(profile_url: str, note_text: str = None):
 async def _like_activity_on_page(page, profile_url: str):
     """
     Core logic: navigate to a profile on an existing page, find the Activity
-    section, click 'Show all', and like up to 10 posts with slow human-like delays.
-    Does NOT open or close the browser.
+    section, click 'Show all', and like all posts (with scroll). Does NOT open
+    or close the browser.
     """
     import re
-    import random
 
     print(f"\nNavigating to profile: {profile_url}")
     await page.goto(profile_url)
@@ -212,34 +211,53 @@ async def _like_activity_on_page(page, profile_url: str):
                 print("Success: Navigated to user's full activity page.")
                 await page.wait_for_timeout(4000)
 
-                print("\n--- Starting Auto-React Mode (max 10 posts) ---")
-                unliked = page.locator("button[aria-label='Reaction button state: no reaction']")
-                already_liked_count = await page.locator("button[aria-label='Reaction button state: Like']").count()
-                count = min(await unliked.count(), 10)
-                print(f"  -> Found: {await unliked.count()} unliked | Already liked: {already_liked_count} | Will like: {count}")
-
+                print("\n--- Starting Auto-React Mode ---")
                 liked_count = 0
-                for _ in range(count):
-                    try:
-                        btn = unliked.first
-                        if await btn.count() == 0:
-                            break
-                        await btn.evaluate("""node => {
-                            node.scrollIntoView({behavior: 'smooth', block: 'center'});
-                        }""")
-                        # Pause after scroll so the post is visible before clicking
-                        await page.wait_for_timeout(random.randint(1000, 2000))
-                        await btn.click()
-                        liked_count += 1
-                        print(f"     Liked post #{liked_count}!")
-                        # Random delay 4-8 seconds between each like
-                        delay = random.uniform(4, 8)
-                        print(f"     Waiting {delay:.1f}s before next like...")
-                        await asyncio.sleep(delay)
-                    except Exception as e:
-                        print(f"     [error] {e}")
+                last_height = 0
+                stale_steps = 0
 
-                print(f"\n--- Finished! Liked {liked_count} post(s) for {profile_url} ---")
+                for step in range(50):
+                    print(f"Scroll Step {step+1}...")
+
+                    unliked = page.locator("button[aria-label='Reaction button state: no reaction']")
+                    already_liked_count = await page.locator("button[aria-label='Reaction button state: Like']").count()
+                    count = await unliked.count()
+                    print(f"  -> Unliked: {count} | Already liked: {already_liked_count}")
+
+                    for _ in range(count):
+                        try:
+                            btn = unliked.first
+                            if await btn.count() == 0:
+                                break
+                            await btn.evaluate("""node => {
+                                node.scrollIntoView({behavior: 'instant', block: 'center'});
+                                node.click();
+                            }""")
+                            liked_count += 1
+                            print(f"     Liked post #{liked_count}!")
+                            await page.wait_for_timeout(1500)
+                        except Exception as e:
+                            print(f"     [error] {e}")
+
+                    for _ in range(6):
+                        await page.evaluate("window.scrollBy(0, 400)")
+                        await page.wait_for_timeout(1200)
+
+                    await page.wait_for_timeout(2500)
+
+                    new_height = await page.evaluate("document.body.scrollHeight")
+                    new_unliked = await page.locator("button[aria-label='Reaction button state: no reaction']").count()
+                    if new_height == last_height and new_unliked == 0:
+                        stale_steps += 1
+                        print(f"  -> No new content ({stale_steps}/3 stale steps).")
+                        if stale_steps >= 3:
+                            print("  -> Reached end of feed, stopping.")
+                            break
+                    else:
+                        stale_steps = 0
+                    last_height = new_height
+
+                print(f"\n--- Finished! Successfully liked {liked_count} new posts. ---")
             else:
                 print("Could not find the 'Show all' button in the Activity section.")
         else:
@@ -253,7 +271,7 @@ async def _like_activity_on_page(page, profile_url: str):
 
 
 async def view_user_activity(profile_url: str):
-    """Single-profile entry point: opens browser, likes up to 10 posts, closes browser."""
+    """Single-profile entry point: opens browser, likes all posts, closes browser."""
     async with async_playwright() as p:
         context = await browser_manager.get_authenticated_context(p, headless=False)
         page = await context.new_page()
