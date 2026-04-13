@@ -72,6 +72,35 @@ async def scrape_people_search(keyword="Software Engineer", max_results=10, head
         
     return results
 
+async def search_people(keywords: str, max_results: int = 30) -> list:
+    """
+    Alias used by agents. Searches LinkedIn people by keywords.
+    Returns list of dicts: {name, headline, company, linkedin_url, mutual_connections}
+    """
+    raw = await scrape_people_search(keyword=keywords, max_results=max_results, headless=True)
+    # Normalise field names + add company (extracted from location/headline field)
+    normalised = []
+    for r in raw:
+        # location field often contains "Company · Location" or just company
+        loc = r.get("location", "")
+        company = loc.split("·")[0].strip() if "·" in loc else loc
+        normalised.append({
+            "name": r["name"],
+            "headline": r.get("headline", ""),
+            "company": company,
+            "linkedin_url": r["linkedin_url"],
+            "mutual_connections": 0,  # not extracted in base scraper
+        })
+    return normalised
+
+
+async def search_company_employees(company: str, max_results: int = 50) -> list:
+    """
+    Searches LinkedIn for people currently at a specific company.
+    """
+    return await search_people(keywords=company, max_results=max_results)
+
+
 if __name__ == "__main__":
     results = asyncio.run(scrape_people_search("Software Engineer", 3, headless=False))
     import json
