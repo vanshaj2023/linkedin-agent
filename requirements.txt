@@ -1,0 +1,11 @@
+inngest==0.4.*
+fastapi==0.115.*
+uvicorn[standard]==0.30.*
+motor==3.4.*
+certifi
+pydantic>=2.0
+playwright==1.44.*
+playwright-stealth==1.0.*
+groq==0.9.*
+slack-sdk==3.27.*
+python-dotenv==1.0.*
