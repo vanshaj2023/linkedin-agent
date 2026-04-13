@@ -86,6 +86,19 @@ async def scrape_jobs(keyword: str, location: str = "United States", max_jobs: i
         
     return results
 
+async def search_jobs(keywords: str, location: str = "", max_results: int = 20) -> list:
+    """
+    Alias used by agents. Wraps scrape_jobs with standard field names.
+    Returns list of dicts: {job_title, company, linkedin_post_url, description, poster_name, poster_text}
+    """
+    loc = location if location else "Remote"
+    raw = await scrape_jobs(keyword=keywords, location=loc, max_jobs=max_results, headless=True)
+    # Add missing poster_text field (not extracted by base scraper)
+    for job in raw:
+        job.setdefault("poster_text", "")
+    return raw
+
+
 if __name__ == "__main__":
     jobs = asyncio.run(scrape_jobs("Python Developer", "Remote", 2, headless=False))
     print(jobs)
