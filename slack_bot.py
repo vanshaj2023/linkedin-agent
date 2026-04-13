@@ -27,69 +27,128 @@ async def send_alert(message: str, level: str = "info"):
         print(f"Error sending message to Slack: {e.response['error']}")
 
 async def send_repost_digest(posts: list):
-    """Sends a formatted digest of highly scored posts to the repost-suggestions channel."""
-    if not posts: return
-    
+    """Sends a formatted digest of highly scored posts with Approve/Skip buttons."""
+    if not posts:
+        return
+
     blocks = [
         {
             "type": "header",
             "text": {
                 "type": "plain_text",
-                "text": "📢 Content Agent: Repost Suggestions (Morning Digest)",
-                "emoji": True
-            }
+                "text": "📢 Content Agent: Repost Suggestions",
+                "emoji": True,
+            },
         }
     ]
-    
+
     for idx, p in enumerate(posts, 1):
         blocks.append({
             "type": "section",
             "text": {
                 "type": "mrkdwn",
-                "text": f"*{idx}. [Score: {p['score']}] {p['author_name']}*\n_{p['content'][:150]}..._\n\n*Why it matched:* {p['reasoning']}\n*Caption Idea:* {p['suggested_caption']}\n*Link:* <{p['post_url']}|View Post>"
-            }
+                "text": (
+                    f"*{idx}. [Score: {p['score']}] {p['author_name']}*\n"
+                    f"_{p['content'][:150]}..._\n\n"
+                    f"*Why it matched:* {p['reasoning']}\n"
+                    f"*Caption Idea:* {p['suggested_caption']}\n"
+                    f"*Link:* <{p['post_url']}|View Post>"
+                ),
+            },
+        })
+        blocks.append({
+            "type": "actions",
+            "elements": [
+                {
+                    "type": "button",
+                    "text": {"type": "plain_text", "text": "🔁 Repost Now"},
+                    "action_id": "repost_now",
+                    "value": p["post_url"],
+                    "style": "primary",
+                },
+                {
+                    "type": "button",
+                    "text": {"type": "plain_text", "text": "⏭ Skip"},
+                    "action_id": "skip_repost",
+                    "value": p["post_url"],
+                },
+            ],
         })
         blocks.append({"type": "divider"})
-        
+
     if not _slack_client:
         print("[SLACK SKIPPED] Repost Digest Dump:")
         print(blocks)
         return
-        
+
     try:
-        await _slack_client.chat_postMessage(channel=SLACK_CHANNEL_CONTENT, blocks=blocks, text="New Repost Suggestions")
+        await _slack_client.chat_postMessage(
+            channel=SLACK_CHANNEL_CONTENT, blocks=blocks, text="New Repost Suggestions"
+        )
     except SlackApiError as e:
         print(f"Error sending digest to Slack: {e.response['error']}")
 
 async def send_job_alert(job: dict):
-    """Sends a high priority job match to Slack."""
+    """Sends a high priority job match to Slack with interactive buttons."""
     blocks = [
         {
             "type": "header",
             "text": {
                 "type": "plain_text",
-                "text": f"🎯 High Match Job Alert: {job['job_title']} @ {job['company']}",
-                "emoji": True
-            }
+                "text": f"🎯 Job Match ({job.get('relevance_score', 0)}/100): {job['job_title']} @ {job['company']}",
+                "emoji": True,
+            },
         },
         {
             "type": "section",
             "text": {
                 "type": "mrkdwn",
-                "text": f"*Match Score: {job['relevance_score']}/100*\n\n*Why it matches:*\n{job['reasoning']}\n\n*Link:* <{job['linkedin_post_url']}|Apply on LinkedIn>"
-            }
-        }
+                "text": (
+                    f"*Why it matches:*\n{job.get('reasoning', 'N/A')}\n\n"
+                    f"*Link:* <{job['linkedin_post_url']}|View on LinkedIn>"
+                ),
+            },
+        },
+        {
+            "type": "actions",
+            "elements": [
+                {
+                    "type": "button",
+                    "text": {"type": "plain_text", "text": "✅ Mark Applied"},
+                    "action_id": "mark_applied",
+                    "value": job["linkedin_post_url"],
+                    "style": "primary",
+                },
+                {
+                    "type": "button",
+                    "text": {"type": "plain_text", "text": "🤝 Trigger Referral"},
+                    "action_id": "trigger_referral",
+                    "value": job["company"],
+                },
+                {
+                    "type": "button",
+                    "text": {"type": "plain_text", "text": "❌ Dismiss"},
+                    "action_id": "dismiss_job",
+                    "value": job["linkedin_post_url"],
+                    "style": "danger",
+                },
+            ],
+        },
     ]
-    
+
     if not _slack_client:
         print("[SLACK SKIPPED] Job Alert Dump:")
         print(blocks)
-        return
-        
+        return None
+
     try:
-        await _slack_client.chat_postMessage(channel=SLACK_CHANNEL_JOBS, blocks=blocks, text="New High-Match Job Found!")
+        resp = await _slack_client.chat_postMessage(
+            channel=SLACK_CHANNEL_JOBS, blocks=blocks, text="New High-Match Job Found!"
+        )
+        return resp.get("ts")
     except SlackApiError as e:
         print(f"Error sending job alert to Slack: {e.response['error']}")
+        return None
 
 async def send_referral_alert(company: str, candidates: list):
     """Sends a summary of generated referral campaigns for a company to Slack."""
@@ -154,3 +213,19 @@ async def handle_resume_command():
     await CircuitBreaker.reset()
     await send_alert("System has been manually RESUMED via Slack.", SLACK_CHANNEL_ALERTS)
     return "System resumed successfully."
+
+
+async def handle_referral_command(company: str) -> str:
+    """
+    Handles /referral <Company> slash command.
+    Fires a referral/campaign.start Inngest event to kick off the Referral Agent.
+    """
+    from inngest_client import inngest_client
+    import inngest
+    await inngest_client.send(
+        inngest.Event(
+            name="referral/campaign.start",
+            data={"company": company, "source": "slack_command"},
+        )
+    )
+    return f"Referral campaign triggered for *{company}*. Check #referral-campaigns for updates."
