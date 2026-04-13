@@ -46,6 +46,12 @@ An automated agent powered by **Playwright** and **LangChain** to autonomously s
 - Digest dispatching functionality in `slack_bot.py` to organize morning notifications of potential reposts straight to Slack workspace channels for review.
 - High-level orchestration wrapper (`agent_content.py`) mapping auto-reactions against the `engage_list`, scheduling likes and LLM-generated comments automatically without bypassing budget constraints.
 
-*(Waiting for user commit before proceeding to Phase 4)*
+### Phase 4: Job Hunter Agent (Completed)
+- Job extraction mechanism (`job_scraper.py`), configured to extract detailed job components directly from the dynamic search pane layout.
+- AI relevance layer (`job_scorer.py`) leveraging LLMs to cross-match candidate profile keywords, scoring job fit objectively between 0-100 logic thresholds. 
+- Integrated `#job-alerts` Slack pipeline within `slack_bot.py` triggering instantaneous interactive job posts for roles scoring over a specific threshold.
+- Action-queue bridging in `agent_job_hunter.py` queuing an organic "I've applied / sent my resume!" comment action directly below the poster's post if manually requested in the actual job descriptions.
 
-#   L i n k e d i n - M a r k e t i n g   
+*(Waiting for user commit before proceeding to Phase 5)*
+
+#   L i n k e d i n - M a r k e t i n g  

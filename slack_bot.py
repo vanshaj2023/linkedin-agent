@@ -1,26 +1,28 @@
 import os
 import asyncio
+import datetime
 from slack_sdk.web.async_client import AsyncWebClient
 from slack_sdk.errors import SlackApiError
 from system_health import CircuitBreaker, BudgetManager
 from database import db
 
 SLACK_BOT_TOKEN = os.getenv("SLACK_BOT_TOKEN")
-SLACK_CHANNEL_ALERTS = "#system-health"
+SLACK_CHANNEL_ALERTS = "#system-alerts"
 SLACK_CHANNEL_JOBS = "#job-alerts"
 SLACK_CHANNEL_CONTENT = "#repost-suggestions"
 SLACK_CHANNEL_REFERRALS = "#referral-campaigns"
 
 _slack_client = AsyncWebClient(token=SLACK_BOT_TOKEN) if SLACK_BOT_TOKEN else None
 
-async def send_alert(message: str, channel: str = SLACK_CHANNEL_ALERTS):
-    """Send an alert to the system-health channel."""
+async def send_alert(message: str, level: str = "info"):
+    """Sends a system alert to Slack."""
     if not _slack_client:
-        print(f"[SLACK SKIPPED] {channel}: {message}")
+        print(f"[SLACK {level.upper()}]: {message}")
         return
         
+    prefix = "🔴 ERROR" if level == "error" else "🟡 WARN" if level == "warn" else "🟢 INFO"
     try:
-        await _slack_client.chat_postMessage(channel=channel, text=message)
+        await _slack_client.chat_postMessage(channel=SLACK_CHANNEL_ALERTS, text=f"{prefix}: {message}")
     except SlackApiError as e:
         print(f"Error sending message to Slack: {e.response['error']}")
 
@@ -58,6 +60,36 @@ async def send_repost_digest(posts: list):
         await _slack_client.chat_postMessage(channel=SLACK_CHANNEL_CONTENT, blocks=blocks, text="New Repost Suggestions")
     except SlackApiError as e:
         print(f"Error sending digest to Slack: {e.response['error']}")
+
+async def send_job_alert(job: dict):
+    """Sends a high priority job match to Slack."""
+    blocks = [
+        {
+            "type": "header",
+            "text": {
+                "type": "plain_text",
+                "text": f"🎯 High Match Job Alert: {job['job_title']} @ {job['company']}",
+                "emoji": True
+            }
+        },
+        {
+            "type": "section",
+            "text": {
+                "type": "mrkdwn",
+                "text": f"*Match Score: {job['relevance_score']}/100*\n\n*Why it matches:*\n{job['reasoning']}\n\n*Link:* <{job['linkedin_post_url']}|Apply on LinkedIn>"
+            }
+        }
+    ]
+    
+    if not _slack_client:
+        print("[SLACK SKIPPED] Job Alert Dump:")
+        print(blocks)
+        return
+        
+    try:
+        await _slack_client.chat_postMessage(channel=SLACK_CHANNEL_JOBS, blocks=blocks, text="New High-Match Job Found!")
+    except SlackApiError as e:
+        print(f"Error sending job alert to Slack: {e.response['error']}")
 
 async def handle_status_command():
     """Generates the response for /status."""
