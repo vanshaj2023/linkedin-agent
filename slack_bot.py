@@ -91,6 +91,41 @@ async def send_job_alert(job: dict):
     except SlackApiError as e:
         print(f"Error sending job alert to Slack: {e.response['error']}")
 
+async def send_referral_alert(company: str, candidates: list):
+    """Sends a summary of generated referral campaigns for a company to Slack."""
+    if not candidates: return
+    
+    blocks = [
+        {
+            "type": "header",
+            "text": {
+                "type": "plain_text",
+                "text": f"🤝 Referral Campaign Triggered: {company}",
+                "emoji": True
+            }
+        }
+    ]
+    
+    for idx, c in enumerate(candidates, 1):
+        blocks.append({
+            "type": "section",
+            "text": {
+                "type": "mrkdwn",
+                "text": f"*{idx}. {c['name']}* ({c['headline']})\n*Day 1 Connect:* _{c['connection_note']}_\n*Day 2 Follow-Up:* _{c['follow_up_message']}_\n*Link:* <{c['linkedin_url']}|View Profile>"
+            }
+        })
+        blocks.append({"type": "divider"})
+        
+    if not _slack_client:
+        print("[SLACK SKIPPED] Referral Alert Dump:")
+        print(blocks)
+        return
+        
+    try:
+        await _slack_client.chat_postMessage(channel=SLACK_CHANNEL_REFERRALS, blocks=blocks, text=f"New Referral Campaign launched for {company}")
+    except SlackApiError as e:
+        print(f"Error sending referral alert to Slack: {e.response['error']}")
+
 async def handle_status_command():
     """Generates the response for /status."""
     health = await CircuitBreaker.status()

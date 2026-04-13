@@ -52,6 +52,9 @@ An automated agent powered by **Playwright** and **LangChain** to autonomously s
 - Integrated `#job-alerts` Slack pipeline within `slack_bot.py` triggering instantaneous interactive job posts for roles scoring over a specific threshold.
 - Action-queue bridging in `agent_job_hunter.py` queuing an organic "I've applied / sent my resume!" comment action directly below the poster's post if manually requested in the actual job descriptions.
 
-*(Waiting for user commit before proceeding to Phase 5)*
+### Phase 5: Referral Agent (Completed)
+- Direct employee extraction wrapper (`referral_scraper.py`) to bypass 1st-degree constraints and locate exact ICs (Individual Contributors) within targeted prospect companies.
+- Context-aware LLM mapping model (`referral_scorer.py`) strictly structured via LangChain to draft authentic two-step Drip configurations: a no-ask non-sales connection request, and a humble ask-for-chat follow up depending on logic flow.
+- The `agent_referral.py` execution orchestrator. This manages initializing wide net campaigns across Slack monitoring (`#referral-campaigns`) and schedules the Day-2 follow ups dynamically measuring 20+ hour delays precisely after your previous connections convert/accept through the global `acceptance_poller.py`. Drip interactions are pipelined directly to the central Action Queue buffer avoiding limit thresholds.
 
-#   L i n k e d i n - M a r k e t i n g  
+#   L i n k e d i n - M a r k e t i n g   
