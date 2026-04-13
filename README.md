@@ -34,6 +34,12 @@ An automated agent powered by **Playwright** and **LangChain** to autonomously s
 - Slack integration commands `/status` and `/pause` mocked in `slack_bot.py`.
 - Dry run parameters structured securely into schemas.
 
-*(Waiting for user commit before proceeding to Phase 2)*
+### Phase 2: Connection Agent (Completed)
+- LinkedIn people search scraper (`people_scraper.py`) to bypass layout limitations.
+- Robust LLM integration (`llm_scorer.py`) utilizing LangChain and `gpt-4o` for relevance scoring and A/B template personalization notes.
+- Agent Orchestration (`agent_connection.py`) parsing scrapes, verifying deductibles against `db.connections`, executing relevance checks, and pushing rate-limited connect actions into MongoDB queue.
+- Acceptance Poller (`acceptance_poller.py`) scraping new connections and recording acceptances back into state.
+
+*(Waiting for user commit before proceeding to Phase 3)*
 
 #   L i n k e d i n - M a r k e t i n g    
