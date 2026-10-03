@@ -3,7 +3,11 @@ import certifi
 from motor.motor_asyncio import AsyncIOMotorClient
 from pydantic import BaseModel, Field
 from typing import Optional, List, Any
-from datetime import datetime
+from datetime import datetime, UTC
+
+
+def _utcnow() -> datetime:
+    return datetime.now(UTC)
 
 MONGODB_URI = os.getenv("MONGODB_URI", "mongodb://localhost:27017")
 client = AsyncIOMotorClient(MONGODB_URI, tlsCAFile=certifi.where())
@@ -18,7 +22,7 @@ class ActionQueueItem(BaseModel):
     payload: dict[str, Any]
     priority: int = 5
     status: str = "queued"
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=_utcnow)
     executed_at: Optional[datetime] = None
     retry_count: int = 0
     error: Optional[str] = None
@@ -59,6 +63,7 @@ class Connection(BaseModel):
     source_agent: str
     relevance_score: Optional[int] = None
     personalization_note: Optional[str] = None
+    template_used: Optional[str] = None
     connected_at: Optional[datetime] = None
     first_contacted_at: Optional[datetime] = None
     last_action_at: Optional[datetime] = None
@@ -74,8 +79,8 @@ class Job(BaseModel):
     relevance_score: Optional[int] = None
     action_taken: str = "none"
     comment_text: Optional[str] = None
-    slack_message_ts: Optional[str] = None
-    discovered_at: datetime = Field(default_factory=datetime.utcnow)
+    slack_ts: Optional[str] = None
+    discovered_at: datetime = Field(default_factory=_utcnow)
     applied: bool = False
     applied_at: Optional[datetime] = None
 
@@ -85,6 +90,8 @@ class EngageListMember(BaseModel):
     name: str
     reason: str
     last_post_url: Optional[str] = None
+    last_post_content: Optional[str] = None
+    last_post_refreshed_at: Optional[datetime] = None
     last_engaged_at: Optional[datetime] = None
     engagement_count: int = 0
     auto_comment: bool = True
@@ -115,7 +122,7 @@ class ReferralCampaign(BaseModel):
     target_role: str
     job_post_url: Optional[str] = None
     status: str = "active"
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=_utcnow)
     targets: List[ReferralTarget] = []
 
 
@@ -128,7 +135,7 @@ class ReputationScore(BaseModel):
     outreach_template_used: Optional[str] = None
     company: Optional[str] = None
     role_type: Optional[str] = None
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=_utcnow)
 
 
 # ── Indexes ──────────────────────────────────────────────────────────────────

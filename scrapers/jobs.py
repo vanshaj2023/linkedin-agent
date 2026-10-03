@@ -1,12 +1,10 @@
 import asyncio
 from playwright.async_api import async_playwright
-from browser.manager import get_authenticated_context, setup_page_stealth, safe_sleep
+from browser.manager import get_authenticated_context, setup_page_stealth, safe_sleep, run_in_playwright_thread
 
 
-async def scrape_jobs(keyword: str, location: str = "United States", max_jobs: int = 5, headless: bool = True) -> list:
-    """Search LinkedIn jobs and scrape titles, companies, and descriptions."""
+async def _scrape_jobs_impl(keyword: str, location: str, max_jobs: int, headless: bool) -> list:
     results = []
-
     async with async_playwright() as p:
         context = await get_authenticated_context(p, headless=headless)
         page = await context.new_page()
@@ -17,19 +15,41 @@ async def scrape_jobs(keyword: str, location: str = "United States", max_jobs: i
             f"?keywords={keyword}&location={location}&origin=JOB_SEARCH_PAGE_SEARCH_BUTTON"
         )
         await safe_sleep()
-        await page.goto(url)
-        await page.wait_for_timeout(5000)
+        await page.goto(url, wait_until="domcontentloaded", timeout=60000)
 
-        # Scroll the job list pane
+        # The list container moved from `.jobs-search-results-list` (legacy) to
+        # `.scaffold-layout__list-container` on the 2025/2026 layout. Wait for
+        # either, whichever this account renders.
         try:
-            await page.locator(".jobs-search-results-list").click()
-            for _ in range(3):
-                await page.keyboard.press("PageDown")
-                await page.wait_for_timeout(1000)
+            await page.wait_for_selector(
+                ".jobs-search-results-list, ul.scaffold-layout__list-container",
+                state="visible", timeout=15000,
+            )
         except Exception:
             pass
+        await page.wait_for_timeout(3000)
 
-        job_cards = await page.locator("div.job-card-container").all()
+        # Scroll the list pane to force lazy-loaded cards into the DOM. Direct
+        # JS scroll on the container is more reliable than focus+PageDown,
+        # which fails silently when the click target doesn't exist.
+        list_pane = page.locator(
+            "ul.scaffold-layout__list-container, .jobs-search-results-list"
+        ).first
+        for _ in range(4):
+            try:
+                if await list_pane.count() > 0:
+                    await list_pane.evaluate(
+                        "el => el.scrollBy(0, el.clientHeight)"
+                    )
+                else:
+                    await page.evaluate("window.scrollBy(0, 800)")
+            except Exception:
+                await page.evaluate("window.scrollBy(0, 800)")
+            await page.wait_for_timeout(1200)
+
+        job_cards = await page.locator(
+            "div.job-card-container, li.scaffold-layout__list-item"
+        ).all()
 
         for card in job_cards:
             if len(results) >= max_jobs:
@@ -39,7 +59,8 @@ async def scrape_jobs(keyword: str, location: str = "United States", max_jobs: i
                 await page.wait_for_timeout(1500)
 
                 title_el = page.locator(
-                    ".job-details-jobs-unified-top-card__job-title, .t-24.t-bold"
+                    ".job-details-jobs-unified-top-card__job-title, "
+                    ".t-24.t-bold, h1.t-24"
                 ).first
                 title = (await title_el.inner_text()).strip() if await title_el.count() > 0 else "Unknown Title"
 
@@ -94,6 +115,12 @@ async def scrape_jobs(keyword: str, location: str = "United States", max_jobs: i
     return results
 
 
+async def scrape_jobs(keyword: str, location: str = "United States", max_jobs: int = 5, headless: bool = True) -> list:
+    return await run_in_playwright_thread(
+        lambda: _scrape_jobs_impl(keyword, location, max_jobs, headless)
+    )
+
+
 async def search_jobs(keywords: str, location: str = "", max_results: int = 20) -> list:
     """Agent-facing wrapper."""
     loc = location if location else "Remote"
@@ -101,5 +128,5 @@ async def search_jobs(keywords: str, location: str = "", max_results: int = 20) 
 
 
 if __name__ == "__main__":
-    jobs = asyncio.run(scrape_jobs("Python Developer", "Remote", 2, headless=False))
+    jobs = asyncio.run(_scrape_jobs_impl("Python Developer", "Remote", 2, headless=False))
     print(jobs)

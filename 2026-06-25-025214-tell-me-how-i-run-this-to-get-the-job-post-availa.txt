@@ -1,0 +1,1102 @@
+╭─── Claude Code v2.1.170 ─────────────────────────────────────────────────────╮
+│                                                    │ Tips for getting        │
+│              Welcome back Team TWOM !              │ started                 │
+│                                                    │ Run /init to create a … │
+│                       ▐▛███▜▌                      │ ─────────────────────── │
+│                      ▝▜█████▛▘                     │ What's new              │
+│                        ▘▘ ▝▝                       │ Improved auto mode saf… │
+│   Sonnet 4.6 · Claude Pro · aggs1825@gmail.com's   │ Added a warning when t… │
+│   Organization                                     │ Added `attribution.ses… │
+│             ~\Desktop\VS Code\linkedin             │ /release-notes for more │
+╰──────────────────────────────────────────────────────────────────────────────╯
+
+
+❯ /usage 
+  ⎿  Settings dialog dismissed
+
+❯ tell me how i run this to get the job post available on linkedin job section  
+  and apply on them...                                                          
+
+● Let me look at the project structure to understand the flow.
+
+  Searched for 1 pattern, read 5 files (ctrl+o to expand)
+
+● Here's how the full job-scraping and auto-apply flow works, and how to run it:
+
+  ---
+  Architecture
+
+  Two agents handle jobs:
+
+  1. job_hunter_run (cron: 3x daily at 8am, 1pm, 7pm): scrapes LinkedIn jobs,
+  LLM-scores them, sends Slack alerts for high-scoring ones, triggers referrals.
+  2. auto_apply_run (cron: every 2 hours): scrapes recent jobs, auto-applies via
+  Easy Apply (score >= 75) or sends a Slack manual-apply alert (score 65-74).
+
+  Both are Inngest functions, so they run via the Inngest dev server, not
+  directly.
+
+  ---
+  Steps to run locally
+
+  1. Set up your .env (copy .env.example, fill in):
+
+  GROQ_API_KEY=...
+  MONGODB_URI=...
+  INNGEST_SIGNING_KEY=...
+  INNGEST_EVENT_KEY=...
+  SLACK_BOT_TOKEN=...
+
+  # Your profile
+  YOUR_NAME=Vanshaj
+  YOUR_EMAIL=aggs1825@gmail.com
+  TARGET_JOB_KEYWORDS=backend engineer,software engineer,python developer
+  TARGET_JOB_LOCATIONS=India,Remote
+
+  # Applicant details for Easy Apply forms
+  APPLICANT_PHONE=+91...
+  APPLICANT_YOE=2
+  APPLICANT_ROLE=Software Engineer
+  APPLICANT_RESUME_PATH=./resume.pdf
+  APPLICANT_LINKEDIN_URL=https://linkedin.com/in/yourprofile
+
+  DRY_RUN=false   # set true to test without actually applying
+
+  2. Start the FastAPI server:
+
+  uvicorn main:app --reload --port 8000
+
+  3. Start the Inngest dev server (in a separate terminal):
+
+  npx inngest-cli@latest dev -u http://localhost:8000/api/inngest
+
+  4. Trigger the functions manually (instead of waiting for the cron):
+
+  Open the Inngest dev UI at http://localhost:8288, go to your functions, and
+  click "Invoke" on:
+  - job-hunter-run to scrape and score jobs
+  - auto-apply-run to scrape recent jobs and queue Easy Apply
+
+  ---
+  What happens after trigger
+
+  - Jobs are scraped from LinkedIn using your TARGET_JOB_KEYWORDS +
+  TARGET_JOB_LOCATIONS
+  - Each job is LLM-scored (Groq, llama-3.3-70b)
+  - Score >= 75 + Easy Apply: queued for auto-apply via Playwright
+  (browser/easy_apply.py)
+  - Score 65-74: Slack alert sent to you for manual apply
+  - Score < 65: stored as low_score, skipped
+
+  The action queue processor (inngest_queue_processor) picks up the easy_apply
+  actions and runs the Playwright browser automation.
+
+  Key flag: DRY_RUN=true in .env means it goes through the whole flow but won't
+  actually submit applications. Set it to false when ready to apply for real.
+
+✻ Crunched for 34s
+
+※ recap: Building a LinkedIn job automation system. You asked how to run the job scraping and auto-apply flow. Next step is to fill in your .env file and run uvicorn plus the Inngest dev server. (disable recaps in /config)
+
+❯ Synced Apps                                                                   
+  Apps can be synced manually with the CLI's -u flag, a config file, the button 
+  below, or via auto-discovery. Learn more                                      
+                                                                                
+  Syncing...                                                                    
+  Not Synced                                                                    
+                                                                                
+  http://localhost:8000/api/inngest                                             
+                                                                                
+  Method                                                                        
+  SERVE                                                                         
+  SDK version                                                                   
+  -                                                                             
+  Language                                                                      
+  -                                                                             
+  Framework                                                                     
+  -                                                                             
+                                                                                
+  Error: Sync rejected since it's from a Dev Server but expected Cloud          
+  Ensure your full URL is correct, including the port. Inngest automatically    
+  scans multiple ports by default.                                              
+                                                                                
+  http://localhost:8000/api/inngest                                             
+  Syncing to the Dev Server                                                     
+
+● This error means your inngest_client is configured with a production
+  signing/event key, but the Inngest dev server expects no keys (or dev-mode
+  keys). Let me check your client setup.
+
+  Searched for 1 pattern, read 1 file (ctrl+o to expand)
+
+● Found it. The is_production=bool(config.INNGEST_SIGNING_KEY) logic means if
+  you have INNGEST_SIGNING_KEY set in your .env, it flips to production mode and
+  rejects the local dev server sync.
+
+  Fix: force is_production=False for local dev, or just clear the signing key
+  from .env while developing locally.
+
+  The cleaner fix is to add a dedicated flag:
+
+● Update(inngest_client.py)
+  ⎿  Added 1 line, removed 1 line
+      4  inngest_client = inngest.Inngest(
+      5      app_id="linkedin-automation",
+      6      signing_key=config.INNGEST_SIGNING_KEY if config.INNGEST_SIG
+         NING_KEY else None,
+      7 -    is_production=bool(config.INNGEST_SIGNING_KEY),             
+      7 +    is_production=config.INNGEST_IS_PRODUCTION,                 
+      8  )
+
+● Now add INNGEST_IS_PRODUCTION to config.py:
+
+● Update(config.py)
+  ⎿  Added 1 line
+      40      # --- Inngest ---
+      41      INNGEST_SIGNING_KEY: str = os.getenv("INNGEST_SIGNING_KEY",
+           "")
+      42      INNGEST_EVENT_KEY: str = os.getenv("INNGEST_EVENT_KEY", "")
+      43 +    INNGEST_IS_PRODUCTION: bool = _env_bool("INNGEST_IS_PRODUCT
+         +ION", False)                                                   
+      44  
+      45      # --- System flags ---
+      46      DRY_RUN: bool = _env_bool("DRY_RUN", True)
+
+● Now in your .env, add:
+
+  INNGEST_IS_PRODUCTION=false
+
+  This defaults to false (dev mode) unless you explicitly set it to true for
+  production. The old logic auto-detected based on signing key presence, which
+  caused this conflict when you had a key set but wanted local dev.
+
+  Restart your FastAPI server, then re-sync in the Inngest UI and it should
+  connect cleanly.
+
+✻ Baked for 28s
+
+❯ INFO:     Started server process [29312]                                      
+  INFO:     Waiting for application startup.                                    
+  Updated 2026-06-24 — Warmup Week 1                                            
+  LinkedIn Automation started. DRY_RUN=True, WARMUP_WEEK=1                      
+  INFO:     Application startup complete.                                       
+  INFO:     127.0.0.1:63075 - "PUT /api/inngest HTTP/1.1" 200 OK                
+  INFO:     127.0.0.1:63085 - "PUT /api/inngest HTTP/1.1" 200 OK                
+  [DRY RUN] Would execute: comment -> {'post_url':                              
+  'https://www.linkedin.com/jobs/view/4400706420/', 'message': "I'm excited     
+  about the opportunity to work with Java and Spring Boot, and I'm confident in 
+  my ability to develop and maintain high-quality backend services."}           
+  INFO:     127.0.0.1:63096 - "PUT /api/inngest HTTP/1.1" 200 OK                
+  INFO:     127.0.0.1:63094 - "POST                                             
+  /api/inngest?fnId=linkedin-automation-queue-processor&stepId=step HTTP/1.1"   
+  206 Partial Content                                                           
+  INFO:     127.0.0.1:63098 - "POST                                             
+  /api/inngest?fnId=linkedin-automation-queue-processor&stepId=step HTTP/1.1"   
+  200 OK                                                                        
+  INFO:     127.0.0.1:63100 - "PUT /api/inngest HTTP/1.1" 200 OK                
+  INFO:     127.0.0.1:63106 - "PUT /api/inngest HTTP/1.1" 200 OK                
+  INFO:     127.0.0.1:63109 - "PUT /api/inngest HTTP/1.1" 200 OK                
+  INFO:     127.0.0.1:52381 - "PUT /api/inngest HTTP/1.1" 200 OK                
+  INFO:     127.0.0.1:52383 - "POST                                             
+  /api/inngest?fnId=linkedin-automation-job-hunter-run&stepId=step HTTP/1.1"    
+  206 Partial Content                                                           
+  Task exception was never retrieved                                            
+  future: <Task finished name='Task-32' coro=<Connection.run() done, defined at 
+  C:\Users\kumar\Desktop\VS                                                     
+  Code\linkedin\venv\Lib\site-packages\playwright\_impl\_connection.py:265>     
+  exception=NotImplementedError()>                                              
+  Traceback (most recent call last):                                            
+    File "C:\Users\kumar\Desktop\VS                                             
+  Code\linkedin\venv\Lib\site-packages\playwright\_impl\_connection.py", line   
+  272, in run                                                                   
+      await self._transport.connect()                                           
+    File "C:\Users\kumar\Desktop\VS                                             
+  Code\linkedin\venv\Lib\site-packages\playwright\_impl\_transport.py", line    
+  133, in connect                                                               
+      raise exc                                                                 
+    File "C:\Users\kumar\Desktop\VS                                             
+  Code\linkedin\venv\Lib\site-packages\playwright\_impl\_transport.py", line    
+  120, in connect                                                               
+      self._proc = await asyncio.create_subprocess_exec(                        
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^                        
+    File "C:\Program Files\Python312\Lib\asyncio\subprocess.py", line 224, in   
+  create_subprocess_exec                                                        
+      transport, protocol = await loop.subprocess_exec(                         
+                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^                         
+    File "C:\Program Files\Python312\Lib\asyncio\base_events.py", line 1743, in 
+  subprocess_exec                                                               
+      transport = await self._make_subprocess_transport(                        
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^                        
+    File "C:\Program Files\Python312\Lib\asyncio\base_events.py", line 524, in  
+  _make_subprocess_transport                                                    
+      raise NotImplementedError                                                 
+  NotImplementedError                                                           
+  INFO:     127.0.0.1:52384 - "POST                                             
+  /api/inngest?fnId=linkedin-automation-job-hunter-run&stepId=step HTTP/1.1"    
+  206 Partial Content                                                           
+  INFO:     127.0.0.1:52394 - "PUT /api/inngest HTTP/1.1" 200 OK                
+  INFO:     127.0.0.1:51901 - "PUT /api/inngest HTTP/1.1" 200 OK                
+  INFO:     127.0.0.1:51907 - "PUT /api/inngest HTTP/1.1" 200 OK                
+  INFO:     127.0.0.1:51913 - "PUT /api/inngest HTTP/1.1" 200 OK                
+  INFO:     127.0.0.1:51923 - "PUT /api/inngest HTTP/1.1" 200 OK                
+  INFO:     127.0.0.1:51938 - "PUT /api/inngest HTTP/1.1" 200 OK                
+  INFO:     127.0.0.1:51945 - "PUT /api/inngest HTTP/1.1" 200 OK                
+  INFO:     127.0.0.1:51958 - "PUT /api/inngest HTTP/1.1" 200 OK                
+  INFO:     127.0.0.1:51966 - "PUT /api/inngest HTTP/1.1" 200 OK                
+  Task exception was never retrieved                                            
+  future: <Task finished name='Task-61' coro=<Connection.run() done, defined at 
+  C:\Users\kumar\Desktop\VS                                                     
+  Code\linkedin\venv\Lib\site-packages\playwright\_impl\_connection.py:265>     
+  exception=NotImplementedError()>                                              
+  Traceback (most recent call last):                                            
+    File "C:\Users\kumar\Desktop\VS                                             
+  Code\linkedin\venv\Lib\site-packages\playwright\_impl\_connection.py", line   
+  272, in run                                                                   
+      await self._transport.connect()                                           
+    File "C:\Users\kumar\Desktop\VS                                             
+  Code\linkedin\venv\Lib\site-packages\playwright\_impl\_transport.py", line    
+  133, in connect                                                               
+      raise exc                                                                 
+    File "C:\Users\kumar\Desktop\VS                                             
+  Code\linkedin\venv\Lib\site-packages\playwright\_impl\_transport.py", line    
+  120, in connect                                                               
+      self._proc = await asyncio.create_subprocess_exec(                        
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^                        
+    File "C:\Program Files\Python312\Lib\asyncio\subprocess.py", line 224, in   
+  create_subprocess_exec                                                        
+      transport, protocol = await loop.subprocess_exec(                         
+                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^                         
+    File "C:\Program Files\Python312\Lib\asyncio\base_events.py", line 1743, in 
+  subprocess_exec                                                               
+      transport = await self._make_subprocess_transport(                        
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^                        
+    File "C:\Program Files\Python312\Lib\asyncio\base_events.py", line 524, in  
+  _make_subprocess_transport                                                    
+      raise NotImplementedError                                                 
+  NotImplementedError                                                           
+  INFO:     127.0.0.1:51968 - "POST                                             
+  /api/inngest?fnId=linkedin-automation-job-hunter-run&stepId=step HTTP/1.1"    
+  206 Partial Content                                                           
+  INFO:     127.0.0.1:51971 - "PUT /api/inngest HTTP/1.1" 200 OK                
+  INFO:     127.0.0.1:51976 - "PUT /api/inngest HTTP/1.1" 200 OK                
+  INFO:     127.0.0.1:51985 - "PUT /api/inngest HTTP/1.1" 200 OK                
+  INFO:     127.0.0.1:51992 - "PUT /api/inngest HTTP/1.1" 200 OK                
+  INFO:     127.0.0.1:51997 - "PUT /api/inngest HTTP/1.1" 200 OK                
+                                                                                
+                                                                                
+  tell me is it working correctly                                               
+
+● The good news: job scraping and scoring is working (the 206 responses are
+  Inngest executing steps). The bad news: Playwright is crashing every time it
+  tries to open a browser.
+
+  The error is:
+  NotImplementedError: _make_subprocess_transport
+
+  This means Playwright can't spawn a subprocess because uvicorn's event loop on
+  Windows doesn't support it. Your main.py sets WindowsProactorEventLoopPolicy
+  but uvicorn creates its own event loop before that takes effect.
+
+  Let me check how Playwright is being launched in the scrapers:
+
+  Read 1 file (ctrl+o to expand)
+
+● The root cause is clear. Playwright uses async_playwright() which spawns a
+  subprocess, and uvicorn on Windows uses SelectorEventLoop (which doesn't
+  support subprocesses), overriding your policy set in main.py.
+
+  The fix: run Playwright in a thread pool executor using asyncio.to_thread with
+  the sync Playwright API, or wrap the call so it runs in its own event loop in
+  a thread.
+
+  The cleanest approach for your architecture is to wrap all Playwright calls to
+  run in a separate thread with their own event loop:
+
+  Searched for 1 pattern, read 2 files (ctrl+o to expand)
+
+● The fix is straightforward. The entire Playwright call needs to run in a
+  thread with its own ProactorEventLoop. Create a utility function that wraps
+  any async Playwright coroutine to run in a separate thread:
+
+● Update(browser\manager.py)
+  ⎿  Added 45 lines
+       1  import os
+       2 +import sys                                                     
+       3  import random
+       4  import asyncio
+       5 +import concurrent.futures                                      
+       6  from playwright.async_api import async_playwright, BrowserConte
+          xt, Page, Playwright
+       7  from playwright_stealth import stealth_async
+       8  
+       9 +                                                               
+      10 +def run_playwright_in_thread(coro_factory):                    
+      11 +    """Run a Playwright coroutine factory in a thread with Proa
+         +ctorEventLoop.                                                 
+      12 +                                                               
+      13 +    On Windows, uvicorn uses SelectorEventLoop which can't spaw
+         +n subprocesses.                                                
+      14 +    This runs the coroutine in a dedicated thread with its own 
+         +ProactorEventLoop.                                             
+      15 +                                                               
+      16 +    Usage:                                                     
+      17 +        result = await run_playwright_in_thread(lambda: my_asyn
+         +c_fn(arg1, arg2))                                              
+      18 +    """                                                        
+      19 +    def _run():                                                
+      20 +        if sys.platform == "win32":                            
+      21 +            loop = asyncio.ProactorEventLoop()                 
+      22 +            asyncio.set_event_loop(loop)                       
+      23 +        else:                                                  
+      24 +            loop = asyncio.new_event_loop()                    
+      25 +            asyncio.set_event_loop(loop)                       
+      26 +        try:                                                   
+      27 +            return loop.run_until_complete(coro_factory())     
+      28 +        finally:                                               
+      29 +            loop.close()                                       
+      30 +                                                               
+      31 +    with concurrent.futures.ThreadPoolExecutor(max_workers=1) a
+         +s pool:                                                        
+      32 +        future = pool.submit(_run)                             
+      33 +        return future                                          
+      34 +                                                               
+      35 +async def run_in_playwright_thread(coro_factory):              
+      36 +    """Async wrapper — awaits the thread result from an async c
+         +ontext."""                                                     
+      37 +    loop = asyncio.get_event_loop()                            
+      38 +    def _run():                                                
+      39 +        if sys.platform == "win32":                            
+      40 +            tloop = asyncio.ProactorEventLoop()                
+      41 +            asyncio.set_event_loop(tloop)                      
+      42 +        else:                                                  
+      43 +            tloop = asyncio.new_event_loop()                   
+      44 +            asyncio.set_event_loop(tloop)                      
+      45 +        try:                                                   
+      46 +            return tloop.run_until_complete(coro_factory())    
+      47 +        finally:                                               
+      48 +            tloop.close()                                      
+      49 +                                                               
+      50 +    return await loop.run_in_executor(None, _run)              
+      51 +                                                               
+      52  STATE_FILE = "state.json"
+      53  
+      54  # ── Consistent fingerprint ───────────────────────────────────
+          ─────────────────
+
+● Now update scrapers/jobs.py to use it:
+
+● Update(scrapers\jobs.py)
+  ⎿  Added 2 lines, removed 4 lines
+       1  import asyncio
+       2  from playwright.async_api import async_playwright
+       3 -from browser.manager import get_authenticated_context, setup_pa
+         -ge_stealth, safe_sleep                                         
+       3 +from browser.manager import get_authenticated_context, setup_pa
+         +ge_stealth, safe_sleep, run_in_playwright_thread               
+       4  
+       5  
+       6 -async def scrape_jobs(keyword: str, location: str = "United Sta
+         -tes", max_jobs: int = 5, headless: bool = True) -> list:       
+       7 -    """Search LinkedIn jobs and scrape titles, companies, and d
+         -escriptions."""                                                
+       6 +async def _scrape_jobs_impl(keyword: str, location: str, max_jo
+         +bs: int, headless: bool) -> list:                              
+       7      results = []
+       9 -                                                               
+       8      async with async_playwright() as p:
+       9          context = await get_authenticated_context(p, headless=h
+          eadless)
+      10          page = await context.new_page()
+
+  Read 1 file (ctrl+o to expand)
+
+● Update(scrapers\jobs.py)
+  ⎿  Added 7 lines, removed 1 line
+      115      return results
+      116  
+      117  
+      118 +async def scrape_jobs(keyword: str, location: str = "United St
+          +ates", max_jobs: int = 5, headless: bool = True) -> list:     
+      119 +    return await run_in_playwright_thread(                    
+      120 +        lambda: _scrape_jobs_impl(keyword, location, max_jobs,
+          + headless)                                                    
+      121 +    )                                                         
+      122 +                                                              
+      123 +                                                              
+      124  async def search_jobs(keywords: str, location: str = "", max_r
+           esults: int = 20) -> list:
+      125      """Agent-facing wrapper."""
+      126      loc = location if location else "Remote"
+     ...
+      128  
+      129  
+      130  if __name__ == "__main__":
+      125 -    jobs = asyncio.run(scrape_jobs("Python Developer", "Remote
+          -", 2, headless=False))                                        
+      131 +    jobs = asyncio.run(_scrape_jobs_impl("Python Developer", "
+          +Remote", 2, headless=False))                                  
+      132      print(jobs)
+
+● Now check what other scrapers also use async_playwright directly so we fix
+  them all:
+
+  Searched for 1 pattern (ctrl+o to expand)
+● There are multiple files. Let me check the ones directly called by Inngest
+  agents (the debug files don't matter):
+
+  Read 4 files (ctrl+o to expand)
+
+● All four have the same problem. The pattern to apply is identical for each.
+  Let me read the full function signatures to wrap them correctly:
+
+  Read 4 files (ctrl+o to expand)
+
+● Let me get the end of each file to understand the full structure:
+
+● Bash(Get-Content "C:\Users\kumar\Desktop\VS
+      Code\linkedin\scrapers\jobs_recent.py" | Select-Object -Last 20)
+  ⎿  Error: Exit code 127
+     /usr/bin/bash: line 1: Get-Content: command not found
+     /usr/bin/bash: line 1: Select-Object: command not found
+
+● Bash(Get-Content "C:\Users\kumar\Desktop\VS Code\linkedin\scrapers\people.py"
+      | Select-Object -Last 15)
+  ⎿  Error: Exit code 127
+     /usr/bin/bash: line 1: Get-Content: command not found
+     /usr/bin/bash: line 1: Select-Object: command not found
+
+● Bash(Get-Content "C:\Users\kumar\Desktop\VS
+      Code\linkedin\browser\easy_apply.py" | Select-Object -Last 20)
+  ⎿  Error: Exit code 127
+     /usr/bin/bash: line 1: Get-Content: command not found
+     /usr/bin/bash: line 1: Select-Object: command not found
+
+● Bash(Get-Content "C:\Users\kumar\Desktop\VS Code\linkedin\scrapers\feed.py" |
+      Select-Object -Last 15)
+  ⎿  Error: Exit code 127
+     /usr/bin/bash: line 1: Get-Content: command not found
+     /usr/bin/bash: line 1: Select-Object: command not found
+
+  Read 4 files (ctrl+o to expand)
+
+● Good news and a simpler fix than I started implementing. The root cause is
+  clear: uvicorn is creating a SelectorEventLoop on Windows instead of
+  ProactorEventLoop. The fix is a single flag.
+
+  Stop your current server and restart with:
+
+  uvicorn main:app --reload --port 8000 --loop asyncio
+
+  The --loop asyncio flag tells uvicorn to use Python's built-in asyncio loop,
+  which on Windows 3.8+ defaults to ProactorEventLoop (the one that supports
+  subprocess spawning — which Playwright needs).
+
+  The run_in_playwright_thread utility I added to browser/manager.py is still
+  useful for running Playwright from non-uvicorn contexts, but you don't need to
+  wrap every scraper function. The --loop asyncio flag fixes it globally.
+
+  ---
+  To make this permanent, add to the bottom of main.py:
+
+  Read 1 file (ctrl+o to expand)
+
+● Update(main.py)
+  ⎿  Added 5 lines
+      215  @app.get("/health")
+      216  async def health():
+      217      return {"status": "ok", "dry_run": config.DRY_RUN, "warmup
+           _week": config.WARMUP_WEEK}
+      218 +                                                              
+      219 +                                                              
+      220 +if __name__ == "__main__":                                    
+      221 +    import uvicorn                                            
+      222 +    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=
+          +True, loop="asyncio")                                         
+
+● Now you can run it either way:
+
+  # Option A — direct (recommended, uses the loop setting automatically)
+  python main.py
+
+  # Option B — uvicorn CLI
+  uvicorn main:app --reload --port 8000 --loop asyncio
+
+  Restart and trigger job-hunter-run again from the Inngest UI. The Playwright
+  NotImplementedError should be gone and you'll see browser automation actually
+  running.
+
+✻ Cogitated for 2m 28s
+
+※ recap: Running LinkedIn job scraper and auto-apply automation via Inngest. Fixed a Playwright event loop crash on Windows. Restart the server with python main.py and trigger job-hunter-run in the Inngest UI to verify it works. (disable recaps in /config)
+
+❯ tell me where i get the output??                                              
+
+● The output appears in three places:
+
+  1. Inngest Dev UI (http://localhost:8288)
+  - Click on a function run to see step-by-step execution, return values, and
+  any errors.
+  - You'll see what each step returned: how many jobs were found, scores, what
+  action was taken per job.
+
+  2. Your terminal (uvicorn logs)
+  - Print statements from the scrapers show up here — things like [feed] found 3
+  candidate containers or Error scraping job: ...
+
+  3. Slack
+  - High-scoring jobs (score >= 70) send a Slack alert via send_job_alert() —
+  this is the main "output" you're meant to act on.
+  - Easy Apply jobs (score >= 75) queue an auto-apply and send nothing to Slack
+  until the apply completes.
+  - Manual apply jobs (score 65-74) send a Slack alert with buttons to mark as
+  applied or trigger a referral.
+
+  4. MongoDB
+  - Every job found gets stored in db.jobs (from job_hunter_run) or
+  db.recent_jobs (from auto_apply_run).
+  - You can query these directly if you want to see everything regardless of
+  score threshold.
+
+  So the primary output is Slack. If you haven't configured SLACK_BOT_TOKEN and
+  a channel, you won't see the alerts. Check your .env for SLACK_BOT_TOKEN and
+  look at slack/bot.py to confirm which channel it posts to.
+
+✻ Cogitated for 11s
+
+❯ (venv) PS C:\Users\kumar\Desktop\VS Code\linkedin> python main.py             
+  INFO:     Will watch for changes in these directories:                        
+  ['C:\\Users\\kumar\\Desktop\\VS Code\\linkedin']                              
+  INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)       
+  INFO:     Started reloader process [28076] using WatchFiles                   
+  INFO:     Started server process [3884]                                       
+  INFO:     Waiting for application startup.                                    
+  Updated 2026-06-24 — Warmup Week 1                                            
+  LinkedIn Automation started. DRY_RUN=True, WARMUP_WEEK=1                      
+  INFO:     Application startup complete.                                       
+  INFO:     127.0.0.1:54789 - "PUT /api/inngest HTTP/1.1" 200 OK                
+  INFO:     127.0.0.1:54792 - "PUT /api/inngest HTTP/1.1" 200 OK                
+  INFO:     127.0.0.1:54797 - "PUT /api/inngest HTTP/1.1" 200 OK                
+  INFO:     127.0.0.1:53505 - "PUT /api/inngest HTTP/1.1" 200 OK                
+  INFO:     127.0.0.1:53509 - "PUT /api/inngest HTTP/1.1" 200 OK                
+  INFO:     127.0.0.1:53511 - "POST                                             
+  /api/inngest?fnId=linkedin-automation-job-hunter-run&stepId=step HTTP/1.1"    
+  206 Partial Content                                                           
+  INFO:     127.0.0.1:53518 - "PUT /api/inngest HTTP/1.1" 200 OK                
+  INFO:     127.0.0.1:53526 - "PUT /api/inngest HTTP/1.1" 200 OK                
+  INFO:     127.0.0.1:53033 - "PUT /api/inngest HTTP/1.1" 200 OK                
+  INFO:     127.0.0.1:53040 - "PUT /api/inngest HTTP/1.1" 200 OK                
+  INFO:     127.0.0.1:53045 - "PUT /api/inngest HTTP/1.1" 200 OK                
+  INFO:     127.0.0.1:53074 - "PUT /api/inngest HTTP/1.1" 200 OK                
+  INFO:     127.0.0.1:53109 - "PUT /api/inngest HTTP/1.1" 200 OK                
+  INFO:     127.0.0.1:53119 - "PUT /api/inngest HTTP/1.1" 200 OK                
+  INFO:     127.0.0.1:53132 - "PUT /api/inngest HTTP/1.1" 200 OK                
+  INFO:     127.0.0.1:53143 - "PUT /api/inngest HTTP/1.1" 200 OK                
+  INFO:     127.0.0.1:53149 - "PUT /api/inngest HTTP/1.1" 200 OK                
+  INFO:     127.0.0.1:62477 - "PUT /api/inngest HTTP/1.1" 200 OK                
+  INFO:     127.0.0.1:62481 - "PUT /api/inngest HTTP/1.1" 200 OK                
+  INFO:     127.0.0.1:62489 - "PUT /api/inngest HTTP/1.1" 200 OK                
+  INFO:     127.0.0.1:53512 - "POST                                             
+  /api/inngest?fnId=linkedin-automation-job-hunter-run&stepId=step HTTP/1.1"    
+  206 Partial Content                                                           
+  INFO:     127.0.0.1:62502 - "PUT /api/inngest HTTP/1.1" 200 OK                
+  INFO:     127.0.0.1:53143 - "PUT /api/inngest HTTP/1.1" 200 OK                
+  INFO:     127.0.0.1:65233 - "PUT /api/inngest HTTP/1.1" 200 OK                
+  INFO:     127.0.0.1:55632 - "PUT /api/inngest HTTP/1.1" 200 OK                
+  INFO:     127.0.0.1:55664 - "PUT /api/inngest HTTP/1.1" 200 OK                
+  INFO:     127.0.0.1:55683 - "PUT /api/inngest HTTP/1.1" 200 OK                
+  INFO:     127.0.0.1:55702 - "PUT /api/inngest HTTP/1.1" 200 OK                
+  INFO:     127.0.0.1:55711 - "PUT /api/inngest HTTP/1.1" 200 OK                
+  INFO:     127.0.0.1:5571                                                      
+  ──── (217 lines hidden) ───────────────────────────────────────────────────── 
+  :50239 - "PUT /api/inngest HTTP/1.1" 200 OK                                   
+  INFO:     127.0.0.1:58992 - "PUT /api/inngest HTTP/1.1" 200 OK                
+  INFO:     127.0.0.1:54648 - "PUT /api/inngest HTTP/1.1" 200 OK                
+  INFO:     127.0.0.1:55686 - "PUT /api/inngest HTTP/1.1" 200 OK                
+  INFO:     127.0.0.1:57522 - "PUT /api/inngest HTTP/1.1" 200 OK                
+  INFO:     127.0.0.1:52275 - "PUT /api/inngest HTTP/1.1" 200 OK                
+  INFO:     127.0.0.1:57298 - "PUT /api/inngest HTTP/1.1" 200 OK                
+  INFO:     127.0.0.1:59344 - "PUT /api/inngest HTTP/1.1" 200 OK                
+  INFO:     127.0.0.1:59347 - "PUT /api/inngest HTTP/1.1" 200 OK                
+  INFO:     127.0.0.1:63887 - "PUT /api/inngest HTTP/1.1" 200 OK                
+  INFO:     127.0.0.1:63890 - "PUT /api/inngest HTTP/1.1" 200 OK                
+  INFO:     127.0.0.1:56142 - "PUT /api/inngest HTTP/1.1" 200 OK                
+  INFO:     127.0.0.1:56144 - "PUT /api/inngest HTTP/1.1" 200 OK                
+  INFO:     127.0.0.1:52952 - "PUT /api/inngest HTTP/1.1" 200 OK                
+  INFO:     127.0.0.1:58146 - "PUT /api/inngest HTTP/1.1" 200 OK                
+  INFO:     127.0.0.1:58150 - "PUT /api/inngest HTTP/1.1" 200 OK                
+  INFO:     127.0.0.1:56380 - "PUT /api/inngest HTTP/1.1" 200 OK                
+  INFO:     127.0.0.1:56388 - "PUT /api/inngest HTTP/1.1" 200 OK                
+  INFO:     127.0.0.1:56391 - "PUT /api/inngest HTTP/1.1" 200 OK                
+  INFO:     127.0.0.1:63703 - "PUT /api/inngest HTTP/1.1" 200 OK                
+  INFO:     127.0.0.1:63706 - "PUT /api/inngest HTTP/1.1" 200 OK                
+  INFO:     127.0.0.1:63709 - "PUT /api/inngest HTTP/1.1" 200 OK                
+  INFO:     127.0.0.1:63712 - "PUT /api/inngest HTTP/1.1" 200 OK                
+  INFO:     127.0.0.1:58405 - "PUT /api/inngest HTTP/1.1" 200 OK                
+  INFO:     127.0.0.1:49677 - "PUT /api/inngest HTTP/1.1" 200 OK                
+  INFO:     127.0.0.1:62812 - "PUT /api/inngest HTTP/1.1" 200 OK                
+  INFO:     127.0.0.1:55001 - "PUT /api/inngest HTTP/1.1" 200 OK                
+  INFO:     127.0.0.1:50786 - "PUT /api/inngest HTTP/1.1" 200 OK                
+  INFO:     127.0.0.1:58112 - "PUT /api/inngest HTTP/1.1" 200 OK                
+  INFO:     127.0.0.1:61900 - "PUT /api/inngest HTTP/1.1" 200 OK                
+  INFO:     127.0.0.1:65112 - "PUT /api/inngest HTTP/1.1" 200 OK                
+  INFO:     127.0.0.1:55338 - "PUT /api/inngest HTTP/1.1" 200 OK                
+  INFO:     127.0.0.1:55341 - "PUT /api/inngest HTTP/1.1" 200 OK                
+  INFO:     127.0.0.1:55344 - "PUT /api/inngest HTTP/1.1" 200 OK                
+  INFO:     127.0.0.1:55348 - "PUT /api/inngest HTTP/1.1" 200 OK                
+  INFO:     127.0.0.1:55351 - "PUT /api/inngest HTTP/1.1" 200 OK                
+  INFO:     127.0.0.1:50867 - "PUT /api/inngest HTTP/1.1" 200 OK                
+  INFO:     127.0.0.1:50870 - "PUT /api/inngest HTTP/1.1" 200 OK                
+  INFO:     127.0.0.1:50878 - "PUT /api/inngest HTTP/1.1" 200 OK                
+                                                                                
+  read the logs and tell me is everything working fine or not??                 
+
+● The --loop asyncio flag didn't fully fix it because uvicorn's --reload mode
+  spawns a child worker process that resets the event loop policy. The
+  Playwright error is still happening.
+
+  Let me check what the referral agent calls with Playwright:
+
+  Read 1 file (ctrl+o to expand)
+
+● The fix has to be the thread wrapper approach — there's no reliable way to
+  force uvicorn's reloader child to use ProactorEventLoop globally. I need to
+  apply run_in_playwright_thread to all public scraper functions that are called
+  from agents.
+
+  The affected ones: scrapers/people.py (search_people), scrapers/feed.py
+  (scrape_hiring_posts, scrape_organic_feed, scrape_user_latest_post),
+  scrapers/jobs_recent.py (scrape_recent_jobs), and browser/easy_apply.py
+  (run_easy_apply).
+
+  Read 2 files (ctrl+o to expand)
+
+● The pattern is: rename the existing function to _impl, add a thin public
+  wrapper that calls run_in_playwright_thread. Let me do all four files:
+
+● Update(scrapers\people.py)
+  ⎿  Added 2 lines, removed 4 lines
+       1  import asyncio
+       2  from playwright.async_api import async_playwright
+       3 -from browser.manager import get_authenticated_context, setup_pa
+         -ge_stealth, safe_sleep                                         
+       3 +from browser.manager import get_authenticated_context, setup_pa
+         +ge_stealth, safe_sleep, run_in_playwright_thread               
+       4  
+       5  
+       6 -async def scrape_people_search(keyword: str = "Software Enginee
+         -r", max_results: int = 10, headless: bool = True) -> list:     
+       7 -    """Search LinkedIn for people by keyword and return basic p
+         -rofile metadata."""                                            
+       6 +async def _scrape_people_search_impl(keyword: str, max_results:
+         + int, headless: bool) -> list:                                 
+       7      results = []
+       9 -                                                               
+       8      async with async_playwright() as p:
+       9          context = await get_authenticated_context(p, headless=h
+          eadless)
+      10          page = await context.new_page()
+
+● Now find where scrape_people_search ends and add the wrapper:
+
+● Update(scrapers\people.py)
+  ⎿  Added 6 lines
+      140      return deduped
+      141  
+      142  
+      143 +async def scrape_people_search(keyword: str = "Software Engine
+          +er", max_results: int = 10, headless: bool = True) -> list:   
+      144 +    return await run_in_playwright_thread(                    
+      145 +        lambda: _scrape_people_search_impl(keyword, max_result
+          +s, headless)                                                  
+      146 +    )                                                         
+      147 +                                                              
+      148 +                                                              
+      149  async def search_people(keywords: str, max_results: int = 30) 
+           -> list:
+      150      """Agent-facing wrapper. Returns normalised dicts with com
+           pany field."""
+      151      raw = await scrape_people_search(keyword=keywords, max_res
+           ults=max_results, headless=True)
+
+● Update(scrapers\people.py)
+  ⎿  Added 1 line, removed 1 line
+      170  
+      171  if __name__ == "__main__":
+      172      import json
+      173 -    results = asyncio.run(scrape_people_search("Software Engin
+          -eer", 3, headless=False))                                     
+      173 +    results = asyncio.run(_scrape_people_search_impl("Software
+          + Engineer", 3, headless=False))                               
+      174      print(json.dumps(results, indent=2))
+● Now jobs_recent.py:
+
+● Update(scrapers\jobs_recent.py)
+  ⎿  Added 5 lines, removed 10 lines
+       1  import asyncio
+       2  from urllib.parse import quote_plus
+       3  from playwright.async_api import async_playwright
+       4 -from browser.manager import get_authenticated_context, setup_pa
+         -ge_stealth, safe_sleep                                         
+       4 +from browser.manager import get_authenticated_context, setup_pa
+         +ge_stealth, safe_sleep, run_in_playwright_thread               
+       5  
+       6  
+       7 -async def scrape_recent_jobs(                                  
+       7 +async def _scrape_recent_jobs_impl(                            
+       8      keywords: list[str],
+       9      locations: list[str],
+      10 -    max_per_combo: int = 25,                                   
+      11 -    easy_apply_only: bool = False,                             
+      12 -    headless: bool = True,                                     
+      10 +    max_per_combo: int,                                        
+      11 +    easy_apply_only: bool,                                     
+      12 +    headless: bool,                                            
+      13  ) -> list[dict]:
+      14 -    """Scrape LinkedIn jobs posted in the last 24 hours.       
+      15 -                                                               
+      16 -    Returns a list of job dicts with is_easy_apply and external
+         -_apply_url fields                                              
+      17 -    so callers can route to auto-apply vs manual Slack alert.  
+      18 -    """                                                        
+      14      results: list[dict] = []
+      15      seen_urls: set[str] = set()
+      16  
+
+● Update(scrapers\jobs_recent.py)
+  ⎿  Added 14 lines, removed 1 line
+      162      return False, None
+      163  
+      164  
+      165 +async def scrape_recent_jobs(                                 
+      166 +    keywords: list[str],                                      
+      167 +    locations: list[str],                                     
+      168 +    max_per_combo: int = 25,                                  
+      169 +    easy_apply_only: bool = False,                            
+      170 +    headless: bool = True,                                    
+      171 +) -> list[dict]:                                              
+      172 +    return await run_in_playwright_thread(                    
+      173 +        lambda: _scrape_recent_jobs_impl(keywords, locations, 
+          +max_per_combo, easy_apply_only, headless)                     
+      174 +    )                                                         
+      175 +                                                              
+      176 +                                                              
+      177  if __name__ == "__main__":
+      178      import json
+      167 -    jobs = asyncio.run(scrape_recent_jobs(                    
+      179 +    jobs = asyncio.run(_scrape_recent_jobs_impl(              
+      180          keywords=["backend engineer"],
+      181          locations=["India"],
+      182          max_per_combo=5,
+      183 +        easy_apply_only=False,                                
+      184          headless=False,
+      185      ))
+      186      print(json.dumps(jobs, indent=2, default=str))
+
+● Now feed.py — three functions use async with async_playwright():
+
+● Update(scrapers\feed.py)
+  ⎿  Added 1 line
+       7      setup_page_stealth,
+       8      safe_sleep,
+       9      validate_session,
+      10 +    run_in_playwright_thread,                                  
+      11  )
+      12  
+      13  
+
+● Update(scrapers\feed.py)
+  ⎿  Added 1 line, removed 4 lines
+      395      return [page.locator(f'[data-scraper-post-id="{i}"]') for 
+           i in range(walk_count)]
+      396  
+      397  
+      398 -async def scrape_hiring_posts(                                
+      399 -    keyword: str = "hiring", max_posts: int = 3, headless: boo
+          -l = True                                                      
+      400 -) -> list:                                                    
+      401 -    """Search LinkedIn content by keyword and return matching 
+          -posts."""                                                     
+      398 +async def _scrape_hiring_posts_impl(keyword: str, max_posts: i
+          +nt, headless: bool) -> list:                                  
+      399      async with async_playwright() as p:
+      400          context = await get_authenticated_context(p, headless=
+           headless)
+      401          page = await context.new_page()
+
+● Update(scrapers\feed.py)
+  ⎿  Added 9 lines
+      439          return results
+      440  
+      441  
+      442 +async def scrape_hiring_posts(                                
+      443 +    keyword: str = "hiring", max_posts: int = 3, headless: boo
+          +l = True                                                      
+      444 +) -> list:                                                    
+      445 +    """Search LinkedIn content by keyword and return matching 
+          +posts."""                                                     
+      446 +    return await run_in_playwright_thread(                    
+      447 +        lambda: _scrape_hiring_posts_impl(keyword, max_posts, 
+          +headless)                                                     
+      448 +    )                                                         
+      449 +                                                              
+      450 +                                                              
+      451  async def _recover_urn_via_menu(post_locator) -> str | None:
+      452      """Click the post's '...' menu and pull the URN from the s
+           hare link.
+      453  
+
+● Update(scrapers\feed.py)
+  ⎿  Added 1 line, removed 9 lines
+      505          return None
+      506  
+      507  
+      508 -async def scrape_organic_feed(                                
+      509 -    max_posts: int = 5, headless: bool = True, enrich_urns: bo
+          -ol = True                                                     
+      510 -) -> list:                                                    
+      511 -    """Scroll the main feed and extract organic posts.        
+      512 -                                                              
+      513 -    enrich_urns: if True, recover real urn:li:activity IDs for
+          - new-layout posts by                                          
+      514 -                 clicking each post's '...' menu. Slower but y
+          -ields real post_url.                                          
+      515 -                 Set False to keep componentkey:* pseudo-IDs (
+          -faster).                                                      
+      516 -    """                                                       
+      508 +async def _scrape_organic_feed_impl(max_posts: int, headless: 
+          +bool, enrich_urns: bool) -> list:                             
+      509      results = []
+      510      async with async_playwright() as p:
+      511          context = await get_authenticated_context(p, headless=
+           headless)
+
+● Update(scrapers\feed.py)
+  ⎿  Added 10 lines, removed 4 lines
+      636      return results
+      637  
+      638  
+      639 -async def scrape_user_latest_post(                            
+      640 -    profile_url: str, headless: bool = True                   
+      641 -) -> dict | None:                                             
+      642 -    """Fetch the most recent post from a user's activity page.
+          -"""                                                           
+      639 +async def scrape_organic_feed(                                
+      640 +    max_posts: int = 5, headless: bool = True, enrich_urns: bo
+          +ol = True                                                     
+      641 +) -> list:                                                    
+      642 +    """Scroll the main feed and extract organic posts."""     
+      643 +    return await run_in_playwright_thread(                    
+      644 +        lambda: _scrape_organic_feed_impl(max_posts, headless,
+          + enrich_urns)                                                 
+      645 +    )                                                         
+      646 +                                                              
+      647 +                                                              
+      648 +async def _scrape_user_latest_post_impl(profile_url: str, head
+          +less: bool) -> dict | None:                                   
+      649      activity_url = profile_url.rstrip("/") + "/recent-activity
+           /all/"
+      650      async with async_playwright() as p:
+      651          context = await get_authenticated_context(p, headless=
+           headless)
+
+● Update(scrapers\feed.py)
+  ⎿  Added 8 lines, removed 1 line
+      667      return result
+      668  
+      669  
+      670 +async def scrape_user_latest_post(profile_url: str, headless: 
+          +bool = True) -> dict | None:                                  
+      671 +    """Fetch the most recent post from a user's activity page.
+          +"""                                                           
+      672 +    return await run_in_playwright_thread(                    
+      673 +        lambda: _scrape_user_latest_post_impl(profile_url, hea
+          +dless)                                                        
+      674 +    )                                                         
+      675 +                                                              
+      676 +                                                              
+      677  if __name__ == "__main__":
+      671 -    posts = asyncio.run(scrape_hiring_posts("hiring", 3, headl
+          -ess=False))                                                   
+      678 +    posts = asyncio.run(_scrape_hiring_posts_impl("hiring", 3,
+          + headless=False))                                             
+      679      print(posts)
+
+● Now easy_apply.py:
+
+  Read 1 file (ctrl+o to expand)
+
+● Update(browser\easy_apply.py)
+  ⎿  Added 2 lines, removed 11 lines
+      1  import os
+      2  import datetime
+      3  from playwright.async_api import async_playwright
+      4 -from browser.manager import get_authenticated_context, setup_pag
+        -e_stealth, safe_sleep                                           
+      4 +from browser.manager import get_authenticated_context, setup_pag
+        +e_stealth, safe_sleep, run_in_playwright_thread                 
+      5  from browser.vision_fallback import fast_screenshot
+      6  from llm.service import answer_application_question
+      7  from config import config
+     ...
+       9  MAX_STEPS = 10
+      10  
+      11  
+      12 -async def run_easy_apply(                                      
+      13 -    job_url: str,                                              
+      14 -    headless: bool = True,                                     
+      15 -    save_debug_dir: str = "output/easy_apply",                 
+      16 -) -> dict:                                                     
+      17 -    """Navigate to a LinkedIn job URL and complete the Easy App
+         -ly flow.                                                       
+      18 -                                                               
+      19 -    Returns {"ok": True} on success or                         
+      20 -    {"ok": False, "reason": "needs_human | no_easy_apply | time
+         -d_out | exception:..."}.                                       
+      21 -    """                                                        
+      12 +async def _run_easy_apply_impl(job_url: str, headless: bool, sa
+         +ve_debug_dir: str) -> dict:                                    
+      13      async with async_playwright() as p:
+      14          context = await get_authenticated_context(p, headless=h
+          eadless)
+      15          page = await context.new_page()
+
+● Now find what comes after the main function body to add the public wrapper:
+
+  Read 1 file (ctrl+o to expand)
+
+● Update(browser\easy_apply.py)
+  ⎿  Added 11 lines
+      150      return {"ok": False, "reason": "timed_out"}
+      151  
+      152  
+      153 +async def run_easy_apply(                                     
+      154 +    job_url: str,                                             
+      155 +    headless: bool = True,                                    
+      156 +    save_debug_dir: str = "output/easy_apply",                
+      157 +) -> dict:                                                    
+      158 +    """Navigate to a LinkedIn job URL and complete the Easy Ap
+          +ply flow."""                                                  
+      159 +    return await run_in_playwright_thread(                    
+      160 +        lambda: _run_easy_apply_impl(job_url, headless, save_d
+          +ebug_dir)                                                     
+      161 +    )                                                         
+      162 +                                                              
+      163 +                                                              
+      164  async def _fill_contact_info(modal, profile: dict) -> None:
+      165      phone_input = modal.locator("input[id*='phone' i], input[n
+           ame*='phone' i]").first
+      166      if await phone_input.count() > 0:
+
+● Now also check agents/connection.py since it directly uses Playwright too:
+
+  Searched for 1 pattern, read 1 file (ctrl+o to expand)
+
+● Update(agents\connection.py)
+  ⎿  Added 33 lines, removed 32 lines
+      131  async def _check_if_connected(profile_url: str) -> bool:
+      132      """Visit a profile and check if the connection degree show
+           s '1st'."""
+      133      from playwright.async_api import async_playwright
+      134 -    from browser.manager import get_authenticated_context, set
+          -up_page_stealth                                               
+      134 +    from browser.manager import get_authenticated_context, set
+          +up_page_stealth, run_in_playwright_thread                     
+      135  
+      136 -    try:                                                      
+      137 -        async with async_playwright() as p:                   
+      138 -            ctx = await get_authenticated_context(p, headless=
+          -True)                                                         
+      139 -            page = await ctx.new_page()                       
+      140 -            await setup_page_stealth(page)                    
+      141 -            await page.goto(profile_url)                      
+      142 -            await page.wait_for_timeout(3000)                 
+      136 +    async def _impl():                                        
+      137 +        try:                                                  
+      138 +            async with async_playwright() as p:               
+      139 +                ctx = await get_authenticated_context(p, headl
+          +ess=True)                                                     
+      140 +                page = await ctx.new_page()                   
+      141 +                await setup_page_stealth(page)                
+      142 +                await page.goto(profile_url)                  
+      143 +                await page.wait_for_timeout(3000)             
+      144  
+      144 -            # Try multiple selectors — LinkedIn changes these 
+          -frequently                                                    
+      145 -            degree_selectors = [                              
+      146 -                "span.dist-value",                            
+      147 -                "span[class*='distance-badge']",              
+      148 -                "span.pvs-header__subtitle",                  
+      149 -            ]                                                 
+      150 -            degree_text = ""                                  
+      151 -            for sel in degree_selectors:                      
+      152 -                el = page.locator(sel).first                  
+      153 -                if await el.count() > 0:                      
+      154 -                    degree_text = (await el.inner_text()).stri
+          -p()                                                           
+      155 -                    break                                     
+      145 +                degree_selectors = [                          
+      146 +                    "span.dist-value",                        
+      147 +                    "span[class*='distance-badge']",          
+      148 +                    "span.pvs-header__subtitle",              
+      149 +                ]                                             
+      150 +                degree_text = ""                              
+      151 +                for sel in degree_selectors:                  
+      152 +                    el = page.locator(sel).first              
+      153 +                    if await el.count() > 0:                  
+      154 +                        degree_text = (await el.inner_text()).
+          +strip()                                                       
+      155 +                        break                                 
+      156  
+      157 -            # Fallback: check for "1st" anywhere in the profil
+          -e header                                                      
+      158 -            if not degree_text:                               
+      159 -                header = page.locator("section.pv-top-card, di
+          -v.ph5").first                                                 
+      160 -                if await header.count() > 0:                  
+      161 -                    header_text = await header.inner_text()   
+      162 -                    if "1st" in header_text:                  
+      163 -                        degree_text = "1st"                   
+      157 +                if not degree_text:                           
+      158 +                    header = page.locator("section.pv-top-card
+          +, div.ph5").first                                             
+      159 +                    if await header.count() > 0:              
+      160 +                        header_text = await header.inner_text(
+          +)                                                             
+      161 +                        if "1st" in header_text:              
+      162 +                            degree_text = "1st"               
+      163  
+      165 -            await ctx.browser.close()                         
+      166 -            return "1st" in degree_text                       
+      167 -    except Exception as e:                                    
+      168 -        print(f"Error checking connection for {profile_url}: {
+          -e}")                                                          
+      169 -        return False                                          
+      164 +                await ctx.browser.close()                     
+      165 +                return "1st" in degree_text                   
+      166 +        except Exception as e:                                
+      167 +            print(f"Error checking connection for {profile_url
+          +}: {e}")                                                      
+      168 +            return False                                      
+      169 +                                                              
+      170 +    return await run_in_playwright_thread(_impl)              
+
+● All Playwright entry points are now wrapped. Restart the server:
+
+  python main.py
+
+  The NotImplementedError errors should be gone. Here's a summary of what was
+  wrong and what's fixed:
+
+  Root cause: uvicorn's --reload spawns a child worker process. That child
+  ignores the WindowsProactorEventLoopPolicy set in main.py and uses
+  SelectorEventLoop, which can't spawn subprocesses (Playwright needs this).
+
+  Fix applied: Every public function that calls async with async_playwright()
+  now delegates to run_in_playwright_thread(), which runs the Playwright
+  coroutine in a dedicated thread with its own ProactorEventLoop. This is immune
+  to whatever loop uvicorn uses.
+
+  Files changed: scrapers/jobs.py, scrapers/jobs_recent.py, scrapers/people.py,
+  scrapers/feed.py, browser/easy_apply.py, agents/connection.py
+
+✻ Crunched for 2m 2s

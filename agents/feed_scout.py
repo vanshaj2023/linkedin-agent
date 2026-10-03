@@ -22,9 +22,14 @@ async def feed_scout_run(ctx: inngest.Context, step: inngest.Step) -> dict:
     if health == "red":
         return {"status": "skipped", "reason": "circuit_breaker_red"}
 
+    # enrich_urns=False: skip the per-post overflow-menu click. Inngest can
+    # retry this step, and repeated menu clicks within a short window get
+    # flagged by LinkedIn. Posts without real URNs still produce a Slack
+    # alert via author_url; URN enrichment can happen later when actually
+    # needed for queuing follow-up actions.
     posts = await step.run(
         "scrape-feed",
-        lambda: scrape_organic_feed(max_posts=40),
+        lambda: scrape_organic_feed(max_posts=40, enrich_urns=False),
     )
 
     alerted = 0
@@ -51,13 +56,13 @@ async def feed_scout_run(ctx: inngest.Context, step: inngest.Step) -> dict:
                 "classification": {},
                 "slack_ts": None,
                 "status": "skipped_short",
-                "discovered_at": datetime.datetime.utcnow(),
+                "discovered_at": datetime.datetime.now(datetime.UTC),
                 "last_action_at": None,
             })
             skipped += 1
             continue
 
-        cls = classify_feed_post_as_job(content, post.get("author_name", ""))
+        cls = await classify_feed_post_as_job(content, post.get("author_name", ""))
 
         doc = {
             "post_id": post_id,
@@ -69,7 +74,7 @@ async def feed_scout_run(ctx: inngest.Context, step: inngest.Step) -> dict:
             "classification": cls,
             "slack_ts": None,
             "status": "skipped",
-            "discovered_at": datetime.datetime.utcnow(),
+            "discovered_at": datetime.datetime.now(datetime.UTC),
             "last_action_at": None,
         }
 

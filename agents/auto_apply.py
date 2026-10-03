@@ -45,7 +45,7 @@ async def auto_apply_run(ctx: inngest.Context, step: inngest.Step) -> dict:
         if existing:
             continue
 
-        score_data = score_job_post(
+        score_data = await score_job_post(
             title=job["job_title"],
             company=job["company"],
             description=job.get("description", ""),
@@ -67,7 +67,7 @@ async def auto_apply_run(ctx: inngest.Context, step: inngest.Step) -> dict:
             "reasoning": score_data.get("reasoning", ""),
             "status": "evaluating",
             "slack_ts": None,
-            "discovered_at": datetime.datetime.utcnow(),
+            "discovered_at": datetime.datetime.now(datetime.UTC),
             "applied_at": None,
         }
 

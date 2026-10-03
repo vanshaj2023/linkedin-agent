@@ -1,21 +1,16 @@
 import asyncio
 from urllib.parse import quote_plus
 from playwright.async_api import async_playwright
-from browser.manager import get_authenticated_context, setup_page_stealth, safe_sleep
+from browser.manager import get_authenticated_context, setup_page_stealth, safe_sleep, run_in_playwright_thread
 
 
-async def scrape_recent_jobs(
+async def _scrape_recent_jobs_impl(
     keywords: list[str],
     locations: list[str],
-    max_per_combo: int = 25,
-    easy_apply_only: bool = False,
-    headless: bool = True,
+    max_per_combo: int,
+    easy_apply_only: bool,
+    headless: bool,
 ) -> list[dict]:
-    """Scrape LinkedIn jobs posted in the last 24 hours.
-
-    Returns a list of job dicts with is_easy_apply and external_apply_url fields
-    so callers can route to auto-apply vs manual Slack alert.
-    """
     results: list[dict] = []
     seen_urls: set[str] = set()
 
@@ -167,12 +162,25 @@ async def _detect_apply_type(page) -> tuple[bool, str | None]:
     return False, None
 
 
+async def scrape_recent_jobs(
+    keywords: list[str],
+    locations: list[str],
+    max_per_combo: int = 25,
+    easy_apply_only: bool = False,
+    headless: bool = True,
+) -> list[dict]:
+    return await run_in_playwright_thread(
+        lambda: _scrape_recent_jobs_impl(keywords, locations, max_per_combo, easy_apply_only, headless)
+    )
+
+
 if __name__ == "__main__":
     import json
-    jobs = asyncio.run(scrape_recent_jobs(
+    jobs = asyncio.run(_scrape_recent_jobs_impl(
         keywords=["backend engineer"],
         locations=["India"],
         max_per_combo=5,
+        easy_apply_only=False,
         headless=False,
     ))
     print(json.dumps(jobs, indent=2, default=str))

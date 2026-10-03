@@ -26,4 +26,5 @@ async def main():
             print(f"[skip] score={cls['relevance_score']:3d} | {post['author_name']} — {content[:60]}...")
 
 
-asyncio.run(main())
+if __name__ == "__main__":
+    asyncio.run(main())

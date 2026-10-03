@@ -1,7 +1,7 @@
 import os
 import datetime
 from playwright.async_api import async_playwright
-from browser.manager import get_authenticated_context, setup_page_stealth, safe_sleep
+from browser.manager import get_authenticated_context, setup_page_stealth, safe_sleep, run_in_playwright_thread
 from browser.vision_fallback import fast_screenshot
 from llm.service import answer_application_question
 from config import config
@@ -9,16 +9,7 @@ from config import config
 MAX_STEPS = 10
 
 
-async def run_easy_apply(
-    job_url: str,
-    headless: bool = True,
-    save_debug_dir: str = "output/easy_apply",
-) -> dict:
-    """Navigate to a LinkedIn job URL and complete the Easy Apply flow.
-
-    Returns {"ok": True} on success or
-    {"ok": False, "reason": "needs_human | no_easy_apply | timed_out | exception:..."}.
-    """
+async def _run_easy_apply_impl(job_url: str, headless: bool, save_debug_dir: str) -> dict:
     async with async_playwright() as p:
         context = await get_authenticated_context(p, headless=headless)
         page = await context.new_page()
@@ -122,7 +113,10 @@ async def _walk_modal(page, debug_dir: str) -> dict:
             await _fill_contact_info(modal, profile)
 
         elif "resume" in header or "upload" in header:
-            await _handle_resume(modal, profile.get("resume_path", ""))
+            ok = await _handle_resume(modal, profile.get("resume_path", ""))
+            if not ok:
+                await _dismiss_modal(page, modal)
+                return {"ok": False, "reason": "needs_human"}
 
         elif "additional questions" in header or "screening questions" in header or "work authorization" in header:
             needs_human = await _answer_questions(modal)
@@ -152,8 +146,19 @@ async def _walk_modal(page, debug_dir: str) -> dict:
             await _dismiss_modal(page, modal)
             return {"ok": False, "reason": "needs_human"}
 
-    await _dismiss_modal(page, modal if True else None)
+    await _dismiss_modal(page, modal)
     return {"ok": False, "reason": "timed_out"}
+
+
+async def run_easy_apply(
+    job_url: str,
+    headless: bool = True,
+    save_debug_dir: str = "output/easy_apply",
+) -> dict:
+    """Navigate to a LinkedIn job URL and complete the Easy Apply flow."""
+    return await run_in_playwright_thread(
+        lambda: _run_easy_apply_impl(job_url, headless, save_debug_dir)
+    )
 
 
 async def _fill_contact_info(modal, profile: dict) -> None:
@@ -164,13 +169,19 @@ async def _fill_contact_info(modal, profile: dict) -> None:
             await phone_input.fill(profile["phone"])
 
 
-async def _handle_resume(modal, resume_path: str) -> None:
-    if not resume_path or not os.path.exists(resume_path):
-        return
+async def _handle_resume(modal, resume_path: str) -> bool:
+    """Returns True on success or no-op (resume already attached), False if a
+    file input is shown but no resume on disk to feed it — caller should bail
+    to needs_human in that case."""
     file_input = modal.locator("input[type='file']").first
-    if await file_input.count() > 0:
-        await file_input.set_input_files(resume_path)
-        await modal.page.wait_for_timeout(1500)
+    if await file_input.count() == 0:
+        # No upload UI on this step; nothing to do.
+        return True
+    if not resume_path or not os.path.exists(resume_path):
+        return False
+    await file_input.set_input_files(resume_path)
+    await modal.page.wait_for_timeout(1500)
+    return True
 
 
 async def _answer_questions(modal) -> bool:
@@ -193,7 +204,7 @@ async def _answer_questions(modal) -> bool:
                 continue
             required = await field.get_attribute("required") is not None
             field_type = "number" if await field.get_attribute("type") == "number" else "text"
-            answer = answer_application_question(
+            answer = await answer_application_question(
                 question=label, field_type=field_type, context=profile
             )
             if answer:
@@ -218,7 +229,7 @@ async def _answer_questions(modal) -> bool:
             current = await sel.input_value()
             if current:
                 continue
-            answer = answer_application_question(
+            answer = await answer_application_question(
                 question=label, field_type="single_select",
                 options=option_texts, context=profile,
             )
@@ -242,7 +253,7 @@ async def _answer_questions(modal) -> bool:
                 continue
             labels = [await fs.locator(f"label[for='{await r.get_attribute('id')}']").first.inner_text()
                       for r in radios]
-            answer = answer_application_question(
+            answer = await answer_application_question(
                 question=question, field_type="yes_no",
                 options=[l.strip() for l in labels if l.strip()], context=profile,
             )
@@ -295,7 +306,7 @@ async def _log_attempt(job_url: str, result: dict) -> None:
             "job_url": job_url,
             "ok": result.get("ok", False),
             "reason": result.get("reason"),
-            "attempted_at": datetime.datetime.utcnow(),
+            "attempted_at": datetime.datetime.now(datetime.UTC),
         })
     except Exception as e:
         print(f"[easy_apply] failed to log attempt: {e}")

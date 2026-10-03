@@ -33,7 +33,8 @@ async def main():
 
     out_path = Path("output") / f"{TASK}_results.json"
     out_path.write_text(json.dumps(results, indent=2))
-    print(f"Saved {len(results)} results → {out_path}")
+    print(f"Saved {len(results)} results -> {out_path}")
 
 
-asyncio.run(main())
+if __name__ == "__main__":
+    asyncio.run(main())

@@ -1,6 +1,6 @@
 import asyncio
 import random
-from datetime import datetime
+from datetime import datetime, UTC
 
 from db import db, ActionQueueItem
 from core.circuit_breaker import CircuitBreaker
@@ -53,7 +53,7 @@ class ActionQueue:
     async def mark_done(action_id):
         await db.action_queue.update_one(
             {"_id": action_id},
-            {"$set": {"status": "done", "executed_at": datetime.utcnow()}},
+            {"$set": {"status": "done", "executed_at": datetime.now(UTC)}},
         )
 
     @staticmethod
@@ -69,7 +69,7 @@ class ActionQueue:
         else:
             await db.action_queue.update_one(
                 {"_id": action_id},
-                {"$set": {"status": "failed", "error": error_msg, "executed_at": datetime.utcnow()}},
+                {"$set": {"status": "failed", "error": error_msg, "executed_at": datetime.now(UTC)}},
             )
 
 
@@ -102,7 +102,7 @@ async def process_one_action() -> dict:
         else:
             await _dispatch_action(action_type, payload, health)
             if action_type == "connect":
-                now = datetime.utcnow()
+                now = datetime.now(UTC)
                 await db.connections.update_one(
                     {"linkedin_url": payload["target_profile_url"]},
                     {"$set": {
@@ -187,7 +187,7 @@ async def _dispatch_action(action_type: str, payload: dict, health: str):
             {"$set": {
                 "targets.$.referral_msg_status": "auto_sent"
                 if payload.get("auto") else "approved",
-                "targets.$.referral_msg_decided_at": datetime.utcnow(),
+                "targets.$.referral_msg_decided_at": datetime.now(UTC),
             }},
         )
 
@@ -204,7 +204,7 @@ async def _dispatch_action(action_type: str, payload: dict, health: str):
             await send_apply_success(job_stub)
             await db.recent_jobs.update_one(
                 {"linkedin_post_url": payload["url"]},
-                {"$set": {"status": "applied", "applied_at": datetime.utcnow()}},
+                {"$set": {"status": "applied", "applied_at": datetime.now(UTC)}},
             )
         else:
             reason = res.get("reason", "unknown")

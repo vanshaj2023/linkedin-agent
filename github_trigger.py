@@ -4,7 +4,7 @@ import json
 import os
 import time
 import zipfile
-import requests
+import httpx
 
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
 REPO = os.getenv("GITHUB_REPO")  # e.g. "vanshaj2023/linkedin"
@@ -19,7 +19,7 @@ HEADERS = {
 
 
 def trigger(task: str, keyword: str = "hiring", max_results: int = 5) -> bool:
-    resp = requests.post(
+    resp = httpx.post(
         f"{BASE}/repos/{REPO}/actions/workflows/{WORKFLOW_FILE}/dispatches",
         headers=HEADERS,
         json={
@@ -35,7 +35,7 @@ def trigger(task: str, keyword: str = "hiring", max_results: int = 5) -> bool:
 
 
 def _latest_run_id() -> int | None:
-    resp = requests.get(
+    resp = httpx.get(
         f"{BASE}/repos/{REPO}/actions/workflows/{WORKFLOW_FILE}/runs",
         headers=HEADERS,
         params={"per_page": 1, "event": "workflow_dispatch"},
@@ -48,7 +48,7 @@ def wait_for_run(run_id: int, timeout: int = 600, poll: int = 15) -> str:
     """Poll until run finishes. Returns final status: success | failure | cancelled."""
     deadline = time.time() + timeout
     while time.time() < deadline:
-        resp = requests.get(f"{BASE}/repos/{REPO}/actions/runs/{run_id}", headers=HEADERS)
+        resp = httpx.get(f"{BASE}/repos/{REPO}/actions/runs/{run_id}", headers=HEADERS)
         data = resp.json()
         status = data.get("status")
         conclusion = data.get("conclusion")
@@ -61,13 +61,13 @@ def wait_for_run(run_id: int, timeout: int = 600, poll: int = 15) -> str:
 
 def download_results(run_id: int) -> list:
     """Download the scrape-results artifact and return parsed JSON."""
-    resp = requests.get(f"{BASE}/repos/{REPO}/actions/runs/{run_id}/artifacts", headers=HEADERS)
+    resp = httpx.get(f"{BASE}/repos/{REPO}/actions/runs/{run_id}/artifacts", headers=HEADERS)
     artifacts = resp.json().get("artifacts", [])
     if not artifacts:
         return []
 
     artifact_id = artifacts[0]["id"]
-    dl = requests.get(
+    dl = httpx.get(
         f"{BASE}/repos/{REPO}/actions/artifacts/{artifact_id}/zip",
         headers=HEADERS,
     )

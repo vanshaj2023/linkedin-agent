@@ -1,11 +1,11 @@
-import os
 import datetime
 from slack_sdk.web.async_client import AsyncWebClient
 from slack_sdk.errors import SlackApiError
 from core.circuit_breaker import CircuitBreaker
 from db import db
+from config import config
 
-SLACK_BOT_TOKEN = os.getenv("SLACK_BOT_TOKEN")
+SLACK_BOT_TOKEN = config.SLACK_BOT_TOKEN
 CHANNEL_ALERTS = "#system-alerts"
 CHANNEL_JOBS = "#job-alerts"
 CHANNEL_CONTENT = "#repost-suggestions"
@@ -303,7 +303,7 @@ async def send_referral_approval(
 
 async def handle_status_command() -> str:
     health = await CircuitBreaker.status()
-    today_str = datetime.datetime.utcnow().strftime("%Y-%m-%d")
+    today_str = datetime.datetime.now(datetime.UTC).strftime("%Y-%m-%d")
     budgets = await db.daily_budgets.find_one({"date": today_str})
     queued = await db.action_queue.count_documents({"status": "queued"})
 

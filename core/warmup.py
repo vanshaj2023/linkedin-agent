@@ -12,7 +12,7 @@ WARMUP_SCHEDULE = {
 async def apply_warmup_budget(week: int = 1):
     week = min(week, 4)
     limits = WARMUP_SCHEDULE[week]
-    today_str = datetime.datetime.utcnow().strftime("%Y-%m-%d")
+    today_str = datetime.datetime.now(datetime.UTC).strftime("%Y-%m-%d")
 
     record = await db.daily_budgets.find_one({"date": today_str})
     if not record:

@@ -1,8 +1,53 @@
 import os
+import sys
 import random
 import asyncio
+import concurrent.futures
 from playwright.async_api import async_playwright, BrowserContext, Page, Playwright
 from playwright_stealth import stealth_async
+
+
+def run_playwright_in_thread(coro_factory):
+    """Run a Playwright coroutine factory in a thread with ProactorEventLoop.
+
+    On Windows, uvicorn uses SelectorEventLoop which can't spawn subprocesses.
+    This runs the coroutine in a dedicated thread with its own ProactorEventLoop.
+
+    Usage:
+        result = await run_playwright_in_thread(lambda: my_async_fn(arg1, arg2))
+    """
+    def _run():
+        if sys.platform == "win32":
+            loop = asyncio.ProactorEventLoop()
+            asyncio.set_event_loop(loop)
+        else:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+        try:
+            return loop.run_until_complete(coro_factory())
+        finally:
+            loop.close()
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+        future = pool.submit(_run)
+        return future
+
+async def run_in_playwright_thread(coro_factory):
+    """Async wrapper — awaits the thread result from an async context."""
+    loop = asyncio.get_event_loop()
+    def _run():
+        if sys.platform == "win32":
+            tloop = asyncio.ProactorEventLoop()
+            asyncio.set_event_loop(tloop)
+        else:
+            tloop = asyncio.new_event_loop()
+            asyncio.set_event_loop(tloop)
+        try:
+            return tloop.run_until_complete(coro_factory())
+        finally:
+            tloop.close()
+
+    return await loop.run_in_executor(None, _run)
 
 STATE_FILE = "state.json"
 

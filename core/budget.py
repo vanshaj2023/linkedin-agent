@@ -5,7 +5,7 @@ from db import db, DailyBudgets
 class BudgetManager:
     @staticmethod
     async def _get_today() -> dict:
-        today_str = datetime.datetime.utcnow().strftime("%Y-%m-%d")
+        today_str = datetime.datetime.now(datetime.UTC).strftime("%Y-%m-%d")
         record = await db.daily_budgets.find_one({"date": today_str})
         if not record:
             new_budget = DailyBudgets(date=today_str).model_dump(by_alias=True)
@@ -21,7 +21,7 @@ class BudgetManager:
 
     @staticmethod
     async def increment_budget(action_key: str):
-        today_str = datetime.datetime.utcnow().strftime("%Y-%m-%d")
+        today_str = datetime.datetime.now(datetime.UTC).strftime("%Y-%m-%d")
         await db.daily_budgets.update_one(
             {"date": today_str},
             {"$inc": {f"{action_key}.used": 1}},

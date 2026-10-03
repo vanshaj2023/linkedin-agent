@@ -7,6 +7,7 @@ from browser.manager import (
     setup_page_stealth,
     safe_sleep,
     validate_session,
+    run_in_playwright_thread,
 )
 
 
@@ -196,12 +197,11 @@ async def _extract_content(post_element) -> str:
                 "view all", "show more results", "edited",
             }
             # Patterns: connection degree, timestamps, "N followers"
-            import_re = __import__('re')
             patterns = [
-                import_re.compile(r"^[•·]?\s*\d+(st|nd|rd\+?|st\+?|nd\+?)$", import_re.IGNORECASE),
-                import_re.compile(r"^[•·]?\s*\d+(s|m|h|d|w|mo|y)\s*[•·]?\s*$", import_re.IGNORECASE),
-                import_re.compile(r"^\d[\d,]*\s+followers?$", import_re.IGNORECASE),
-                import_re.compile(r"^[•·]\s*$"),
+                re.compile(r"^[•·]?\s*\d+(st|nd|rd\+?|st\+?|nd\+?)$", re.IGNORECASE),
+                re.compile(r"^[•·]?\s*\d+(s|m|h|d|w|mo|y)\s*[•·]?\s*$", re.IGNORECASE),
+                re.compile(r"^\d[\d,]*\s+followers?$", re.IGNORECASE),
+                re.compile(r"^[•·]\s*$"),
             ]
             cleaned = []
             for l in lines:
@@ -295,19 +295,6 @@ async def _extract_post_data(post_element) -> dict | None:
         }
     except Exception:
         return None
-
-
-def _post_container_selectors(context: str = "feed") -> str:
-    """Return the CSS selectors for post containers based on page context.
-
-    LinkedIn uses different container structures on different pages:
-    - Feed: posts are in <li> elements or div.feed-shared-update-v2
-    - Search results: posts are in div[role='listitem']
-    - Activity page: posts are in <li> elements
-    """
-    if context == "search":
-        return "div[role='listitem']"
-    return "div[data-urn^='urn:li:activity'], div[data-urn^='urn:li:share'], div[data-urn^='urn:li:ugcPost']"
 
 
 async def _find_post_elements(page, context: str = "feed") -> list:
@@ -408,10 +395,7 @@ async def _find_post_elements(page, context: str = "feed") -> list:
     return [page.locator(f'[data-scraper-post-id="{i}"]') for i in range(walk_count)]
 
 
-async def scrape_hiring_posts(
-    keyword: str = "hiring", max_posts: int = 3, headless: bool = True
-) -> list:
-    """Search LinkedIn content by keyword and return matching posts."""
+async def _scrape_hiring_posts_impl(keyword: str, max_posts: int, headless: bool) -> list:
     async with async_playwright() as p:
         context = await get_authenticated_context(p, headless=headless)
         page = await context.new_page()
@@ -453,6 +437,15 @@ async def scrape_hiring_posts(
 
         await context.browser.close()
         return results
+
+
+async def scrape_hiring_posts(
+    keyword: str = "hiring", max_posts: int = 3, headless: bool = True
+) -> list:
+    """Search LinkedIn content by keyword and return matching posts."""
+    return await run_in_playwright_thread(
+        lambda: _scrape_hiring_posts_impl(keyword, max_posts, headless)
+    )
 
 
 async def _recover_urn_via_menu(post_locator) -> str | None:
@@ -512,15 +505,7 @@ async def _recover_urn_via_menu(post_locator) -> str | None:
         return None
 
 
-async def scrape_organic_feed(
-    max_posts: int = 5, headless: bool = True, enrich_urns: bool = True
-) -> list:
-    """Scroll the main feed and extract organic posts.
-
-    enrich_urns: if True, recover real urn:li:activity IDs for new-layout posts by
-                 clicking each post's '...' menu. Slower but yields real post_url.
-                 Set False to keep componentkey:* pseudo-IDs (faster).
-    """
+async def _scrape_organic_feed_impl(max_posts: int, headless: bool, enrich_urns: bool) -> list:
     results = []
     async with async_playwright() as p:
         context = await get_authenticated_context(p, headless=headless)
@@ -651,10 +636,16 @@ async def scrape_organic_feed(
     return results
 
 
-async def scrape_user_latest_post(
-    profile_url: str, headless: bool = True
-) -> dict | None:
-    """Fetch the most recent post from a user's activity page."""
+async def scrape_organic_feed(
+    max_posts: int = 5, headless: bool = True, enrich_urns: bool = True
+) -> list:
+    """Scroll the main feed and extract organic posts."""
+    return await run_in_playwright_thread(
+        lambda: _scrape_organic_feed_impl(max_posts, headless, enrich_urns)
+    )
+
+
+async def _scrape_user_latest_post_impl(profile_url: str, headless: bool) -> dict | None:
     activity_url = profile_url.rstrip("/") + "/recent-activity/all/"
     async with async_playwright() as p:
         context = await get_authenticated_context(p, headless=headless)
@@ -676,6 +667,13 @@ async def scrape_user_latest_post(
     return result
 
 
+async def scrape_user_latest_post(profile_url: str, headless: bool = True) -> dict | None:
+    """Fetch the most recent post from a user's activity page."""
+    return await run_in_playwright_thread(
+        lambda: _scrape_user_latest_post_impl(profile_url, headless)
+    )
+
+
 if __name__ == "__main__":
-    posts = asyncio.run(scrape_hiring_posts("hiring", 3, headless=False))
+    posts = asyncio.run(_scrape_hiring_posts_impl("hiring", 3, headless=False))
     print(posts)

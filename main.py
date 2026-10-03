@@ -136,11 +136,11 @@ async def slack_actions(request: Request):
             from db import db
             await db.jobs.update_one(
                 {"linkedin_post_url": value},
-                {"$set": {"applied": True, "applied_at": dt.datetime.utcnow()}},
+                {"$set": {"applied": True, "applied_at": dt.datetime.now(dt.UTC)}},
             )
             await db.recent_jobs.update_one(
                 {"linkedin_post_url": value},
-                {"$set": {"status": "applied", "applied_at": dt.datetime.utcnow()}},
+                {"$set": {"status": "applied", "applied_at": dt.datetime.now(dt.UTC)}},
             )
         elif action_id == "trigger_referral":
             await handle_referral_command(value)
@@ -157,7 +157,7 @@ async def slack_actions(request: Request):
             poster_url = parts[0]
             note_seed = parts[1] if len(parts) > 1 else ""
             if poster_url:
-                note = generate_connection_note(
+                note = await generate_connection_note(
                     headline=note_seed, post_summary=note_seed, template_id="A"
                 )
                 await ActionQueue.push(
@@ -187,7 +187,7 @@ async def slack_actions(request: Request):
                         {"targets.linkedin_url": value},
                         {"$set": {
                             "targets.$.referral_msg_status": "approved",
-                            "targets.$.referral_msg_decided_at": dt.datetime.utcnow(),
+                            "targets.$.referral_msg_decided_at": dt.datetime.now(dt.UTC),
                         }},
                     )
         elif action_id == "skip_referral_dm":
@@ -197,7 +197,7 @@ async def slack_actions(request: Request):
                 {"targets.linkedin_url": value},
                 {"$set": {
                     "targets.$.referral_msg_status": "skipped",
-                    "targets.$.referral_msg_decided_at": dt.datetime.utcnow(),
+                    "targets.$.referral_msg_decided_at": dt.datetime.now(dt.UTC),
                 }},
             )
         elif action_id == "dismiss_feed_job":
@@ -215,3 +215,8 @@ async def slack_actions(request: Request):
 @app.get("/health")
 async def health():
     return {"status": "ok", "dry_run": config.DRY_RUN, "warmup_week": config.WARMUP_WEEK}
+
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True, loop="asyncio")

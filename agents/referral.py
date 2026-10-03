@@ -101,7 +101,7 @@ async def referral_campaign_start(ctx: inngest.Context, step: inngest.Step) -> d
         "target_role": target_role,
         "job_post_url": job_post_url,
         "status": "active",
-        "created_at": datetime.datetime.utcnow(),
+        "created_at": datetime.datetime.now(datetime.UTC),
         "targets": [
             {
                 "linkedin_url": c["linkedin_url"],
@@ -126,7 +126,7 @@ async def referral_campaign_start(ctx: inngest.Context, step: inngest.Step) -> d
             "name": c["name"],
             "headline": c.get("headline", ""),
             "linkedin_url": c["linkedin_url"],
-            "connection_note": generate_connection_note(
+            "connection_note": await generate_connection_note(
                 c.get("headline", ""), c.get("company", company), "A",
             ),
         }
@@ -157,13 +157,13 @@ async def _queue_connects(
 
     queued = 0
     for c in candidates:
-        note = generate_connection_note(
+        note = await generate_connection_note(
             c.get("headline", ""), c.get("company", company), "A",
         )
         # Pre-compute the referral DM now so:
         #  1. Slack approval shows the EXACT message that'll be sent.
         #  2. LLM cost is paid once per target, not on every poller pass.
-        proposed = generate_referral_message(
+        proposed = await generate_referral_message(
             to_name=c["name"], to_headline=c.get("headline", ""),
             company=company, target_role=target_role,
         )
@@ -207,7 +207,7 @@ async def referral_acceptance_poller(ctx: inngest.Context, step: inngest.Step) -
     if health == "red":
         return {"status": "skipped", "reason": "circuit_breaker_red"}
 
-    now = datetime.datetime.utcnow()
+    now = datetime.datetime.now(datetime.UTC)
     checked = auto_sent = awaiting = timed_out = 0
 
     # 1. Time out stale awaiting_approval rows
@@ -253,7 +253,7 @@ async def referral_acceptance_poller(ctx: inngest.Context, step: inngest.Step) -
                 continue
 
             days_since = (now - sent_at).total_seconds() / 86400.0
-            proposed_msg = t.get("proposed_referral_msg") or generate_referral_message(
+            proposed_msg = t.get("proposed_referral_msg") or await generate_referral_message(
                 to_name=t["name"], to_headline=t.get("headline", ""),
                 company=company, target_role=camp.get("target_role", ""),
             )

@@ -11,22 +11,22 @@ class CircuitBreaker:
             return "green"
 
         if health["status"] in ("yellow", "red") and health.get("auto_resume_at"):
-            if datetime.datetime.utcnow() >= health["auto_resume_at"]:
+            if datetime.datetime.now(datetime.UTC) >= health["auto_resume_at"]:
                 await CircuitBreaker.reset()
                 return "green"
 
         return health["status"]
 
     @staticmethod
-    async def trip(level: str, reason: str, auto_resume_hours: int = None):
+    async def trip(level: str, reason: str, auto_resume_hours: int | None = None):
         updates = {
             "status": level,
-            "triggered_at": datetime.datetime.utcnow(),
+            "triggered_at": datetime.datetime.now(datetime.UTC),
             "reason": reason,
         }
         if auto_resume_hours:
             updates["auto_resume_at"] = (
-                datetime.datetime.utcnow() + datetime.timedelta(hours=auto_resume_hours)
+                datetime.datetime.now(datetime.UTC) + datetime.timedelta(hours=auto_resume_hours)
             )
         else:
             updates["auto_resume_at"] = None

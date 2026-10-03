@@ -37,14 +37,14 @@ async def connection_agent_run(ctx: inngest.Context, step: inngest.Step) -> dict
         if existing:
             continue
 
-        score = score_connection_profile(
+        score = await score_connection_profile(
             profile["headline"], profile["company"], profile.get("mutual_connections", 0),
         )
         if score < config.CONNECTION_RELEVANCE_THRESHOLD:
             continue
 
         template = random.choice(TEMPLATES)
-        note = generate_connection_note(
+        note = await generate_connection_note(
             headline=profile["headline"],
             post_summary=profile.get("headline", ""),
             template_id=template,
@@ -85,7 +85,7 @@ async def connection_agent_run(ctx: inngest.Context, step: inngest.Step) -> dict
             {"linkedin_url": profile["linkedin_url"]},
             {"$set": {
                 "status": "queued",
-                "last_action_at": datetime.datetime.utcnow(),
+                "last_action_at": datetime.datetime.now(datetime.UTC),
             }},
         )
         queued += 1
@@ -117,7 +117,7 @@ async def connection_acceptance_poller(ctx: inngest.Context, step: inngest.Step)
         if is_accepted:
             await db.connections.update_one(
                 {"linkedin_url": url},
-                {"$set": {"status": "accepted", "connected_at": datetime.datetime.utcnow()}},
+                {"$set": {"status": "accepted", "connected_at": datetime.datetime.now(datetime.UTC)}},
             )
             await inngest_client.send(inngest.Event(
                 name="connection/accepted",
@@ -131,39 +131,40 @@ async def connection_acceptance_poller(ctx: inngest.Context, step: inngest.Step)
 async def _check_if_connected(profile_url: str) -> bool:
     """Visit a profile and check if the connection degree shows '1st'."""
     from playwright.async_api import async_playwright
-    from browser.manager import get_authenticated_context, setup_page_stealth
+    from browser.manager import get_authenticated_context, setup_page_stealth, run_in_playwright_thread
 
-    try:
-        async with async_playwright() as p:
-            ctx = await get_authenticated_context(p, headless=True)
-            page = await ctx.new_page()
-            await setup_page_stealth(page)
-            await page.goto(profile_url)
-            await page.wait_for_timeout(3000)
+    async def _impl():
+        try:
+            async with async_playwright() as p:
+                ctx = await get_authenticated_context(p, headless=True)
+                page = await ctx.new_page()
+                await setup_page_stealth(page)
+                await page.goto(profile_url)
+                await page.wait_for_timeout(3000)
 
-            # Try multiple selectors — LinkedIn changes these frequently
-            degree_selectors = [
-                "span.dist-value",
-                "span[class*='distance-badge']",
-                "span.pvs-header__subtitle",
-            ]
-            degree_text = ""
-            for sel in degree_selectors:
-                el = page.locator(sel).first
-                if await el.count() > 0:
-                    degree_text = (await el.inner_text()).strip()
-                    break
+                degree_selectors = [
+                    "span.dist-value",
+                    "span[class*='distance-badge']",
+                    "span.pvs-header__subtitle",
+                ]
+                degree_text = ""
+                for sel in degree_selectors:
+                    el = page.locator(sel).first
+                    if await el.count() > 0:
+                        degree_text = (await el.inner_text()).strip()
+                        break
 
-            # Fallback: check for "1st" anywhere in the profile header
-            if not degree_text:
-                header = page.locator("section.pv-top-card, div.ph5").first
-                if await header.count() > 0:
-                    header_text = await header.inner_text()
-                    if "1st" in header_text:
-                        degree_text = "1st"
+                if not degree_text:
+                    header = page.locator("section.pv-top-card, div.ph5").first
+                    if await header.count() > 0:
+                        header_text = await header.inner_text()
+                        if "1st" in header_text:
+                            degree_text = "1st"
 
-            await ctx.browser.close()
-            return "1st" in degree_text
-    except Exception as e:
-        print(f"Error checking connection for {profile_url}: {e}")
-        return False
+                await ctx.browser.close()
+                return "1st" in degree_text
+        except Exception as e:
+            print(f"Error checking connection for {profile_url}: {e}")
+            return False
+
+    return await run_in_playwright_thread(_impl)

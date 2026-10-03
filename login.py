@@ -1,5 +1,11 @@
 import os
+import sys
 import asyncio
+# Make non-ASCII chars (✓, ⚠) safe on Windows cp1252 console.
+try:
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+except Exception:
+    pass
 from playwright.async_api import async_playwright
 from browser.manager import (
     get_authenticated_context,
